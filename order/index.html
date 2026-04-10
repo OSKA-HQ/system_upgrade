@@ -198,29 +198,53 @@
 
     // ===== Firestore 실시간 구독 =====
     // ===== CRM Firestore 구독 =====
+    let _renderThrottle = null;
+    let _lastCustomerCount = -1;
+
+    function throttledRender() {
+      if (_renderThrottle) return;
+      _renderThrottle = setTimeout(() => {
+        _renderThrottle = null;
+        render();
+      }, 500);
+    }
+
     function subscribeCustomers() {
       const { db, collection, query, orderBy, onSnapshot } = window.WORKS_DB;
       const ref = collection(db, 'crm_customers');
       const q = query(ref, orderBy('no', 'desc'));
       unsubCustomers = onSnapshot(q, (snapshot) => {
-        customers = [];
+        const newCustomers = [];
         snapshot.forEach(doc => {
-          customers.push({ id: doc.id, ...doc.data() });
+          newCustomers.push({ id: doc.id, ...doc.data() });
         });
+        // 데이터 변경 없으면 render 스킵
+        if (newCustomers.length === _lastCustomerCount && customers.length > 0) {
+          customers = newCustomers;
+          return;
+        }
+        customers = newCustomers;
+        _lastCustomerCount = customers.length;
         console.log('CRM loaded:', customers.length, 'records');
-        if (currentView === 'crm' || currentView === 'home' || currentView === 'dashboard') render();
+        if (currentView === 'crm' || currentView === 'home' || currentView === 'dashboard') throttledRender();
       }, (error) => {
         console.error('CRM subscribe error:', error);
         // 인덱스 문제시 orderBy 없이 재시도
         const q2 = query(ref);
         unsubCustomers = onSnapshot(q2, (snapshot) => {
-          customers = [];
+          const newCustomers = [];
           snapshot.forEach(doc => {
-            customers.push({ id: doc.id, ...doc.data() });
+            newCustomers.push({ id: doc.id, ...doc.data() });
           });
-          customers.sort((a, b) => (b.no || 0) - (a.no || 0));
+          newCustomers.sort((a, b) => (b.no || 0) - (a.no || 0));
+          if (newCustomers.length === _lastCustomerCount && customers.length > 0) {
+            customers = newCustomers;
+            return;
+          }
+          customers = newCustomers;
+          _lastCustomerCount = customers.length;
           console.log('CRM loaded (fallback):', customers.length, 'records');
-          if (currentView === 'crm' || currentView === 'home' || currentView === 'dashboard') render();
+          if (currentView === 'crm' || currentView === 'home' || currentView === 'dashboard') throttledRender();
         });
       });
     }
@@ -234,7 +258,7 @@
         snapshot.forEach(doc => {
           orders.push({ id: doc.id, ...doc.data() });
         });
-        if (currentView === 'orders' || currentView === 'home') render();
+        if (currentView === 'orders' || currentView === 'home') throttledRender();
       });
     }
 
@@ -247,7 +271,7 @@
         snapshot.forEach(doc => {
           notices.push({ id: doc.id, ...doc.data() });
         });
-        if (currentView === 'notice' || currentView === 'home') render();
+        if (currentView === 'notice' || currentView === 'home') throttledRender();
       });
     }
 
@@ -255,7 +279,11 @@
     let _searchDebounce = null;
     let _restoreFocus = null;
 
+    let _isRendering = false;
     function render() {
+      if (_isRendering) return;
+      _isRendering = true;
+
       // 렌더 전 포커스 위치 저장
       const activeEl = document.activeElement;
       if (activeEl && activeEl.id) {
@@ -266,29 +294,35 @@
       }
 
       const app = document.getElementById('app');
-      if (currentView === 'order_select') app.innerHTML = renderOrderSelect();
-      else if (currentView === 'order') app.innerHTML = renderOrderForm();
-      else if (currentView === 'order_parts') app.innerHTML = renderPartsOrderForm();
-      else if (currentView === 'order_etc') app.innerHTML = renderEtcOrderForm();
-      else if (currentView === 'orders') app.innerHTML = renderOrderList();
-      else if (currentView === 'notice') app.innerHTML = renderNotice();
-      else if (currentView === 'crm') app.innerHTML = renderCRM();
-      else if (currentView === 'dashboard') app.innerHTML = renderDashboardPage();
-      else app.innerHTML = renderHome();
-      lucide.createIcons();
-      bindEvents();
+      let html = '';
+      if (currentView === 'order_select') html = renderOrderSelect();
+      else if (currentView === 'order') html = renderOrderForm();
+      else if (currentView === 'order_parts') html = renderPartsOrderForm();
+      else if (currentView === 'order_etc') html = renderEtcOrderForm();
+      else if (currentView === 'orders') html = renderOrderList();
+      else if (currentView === 'notice') html = renderNotice();
+      else if (currentView === 'crm') html = renderCRM();
+      else if (currentView === 'dashboard') html = renderDashboardPage();
+      else html = renderHome();
 
-      // 렌더 후 포커스 복원
-      if (_restoreFocus) {
-        const el = document.getElementById(_restoreFocus.id);
-        if (el) {
-          el.focus();
-          if (typeof el.selectionStart !== 'undefined' && _restoreFocus.cursor !== null) {
-            el.selectionStart = el.selectionEnd = _restoreFocus.cursor;
+      requestAnimationFrame(() => {
+        app.innerHTML = html;
+        lucide.createIcons();
+        bindEvents();
+
+        // 렌더 후 포커스 복원
+        if (_restoreFocus) {
+          const el = document.getElementById(_restoreFocus.id);
+          if (el) {
+            el.focus();
+            if (typeof el.selectionStart !== 'undefined' && _restoreFocus.cursor !== null) {
+              el.selectionStart = el.selectionEnd = _restoreFocus.cursor;
+            }
           }
+          _restoreFocus = null;
         }
-        _restoreFocus = null;
-      }
+        _isRendering = false;
+      });
     }
 
     function debouncedSearch(value) {
