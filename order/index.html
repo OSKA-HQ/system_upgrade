@@ -1552,18 +1552,26 @@
       const allProducts = Object.entries(productCounts).sort((a, b) => b[1] - a[1]);
       const maxProd = allProducts.length > 0 ? allProducts[0][1] : 1;
 
-      // 지역별 (전체)
+      // 지역별 (전체) — 해외는 별도 분리
       const regionCounts = {};
-      data.forEach(c => { if (c.province) regionCounts[c.province] = (regionCounts[c.province] || 0) + 1; });
-      const allRegions = Object.entries(regionCounts).sort((a, b) => b[1] - a[1]);
-      const maxRegion = allRegions.length > 0 ? allRegions[0][1] : 1;
+      let overseasCount = 0;
+      data.forEach(c => {
+        if (c.province) {
+          if (c.province === '해외') { overseasCount++; }
+          else { regionCounts[c.province] = (regionCounts[c.province] || 0) + 1; }
+        }
+      });
+      const domesticRegions = Object.entries(regionCounts).sort((a, b) => b[1] - a[1]);
+      const allRegions = overseasCount > 0 ? [...domesticRegions, ['해외', overseasCount]] : domesticRegions;
+      const maxRegion = domesticRegions.length > 0 ? domesticRegions[0][1] : 1;
 
-      // 지역 상세 (시/군 레벨)
+      // 지역 상세 (시/군 레벨) — 해외는 국가명으로
       const regionDetail = {};
       data.forEach(c => {
         if (c.province) {
-          if (!regionDetail[c.province]) regionDetail[c.province] = {};
-          const dist = c.district || '미지정';
+          const key = c.province;
+          if (!regionDetail[key]) regionDetail[key] = {};
+          const dist = key === '해외' ? (c.overseasCountry || '기타') : (c.district || '미지정');
           regionDetail[c.province][dist] = (regionDetail[c.province][dist] || 0) + 1;
         }
       });
@@ -1572,10 +1580,15 @@
       const oskaCount = data.filter(c => c.brand === '오스카').length;
       const terraCount = data.filter(c => c.brand === '테라까사').length;
 
-      // 이관
-      const transferred = data.filter(c => c.transfer === '이관').length;
-      const notTransferred = data.filter(c => c.transfer === '미이관').length;
-      const transferRate = total > 0 ? Math.round(transferred / total * 100) : 0;
+      // 지사이관 (assignedBranch 기반)
+      const branchCounts = {};
+      data.forEach(c => {
+        const b = c.assignedBranch || '';
+        if (b) branchCounts[b] = (branchCounts[b] || 0) + 1;
+      });
+      const totalBranched = Object.values(branchCounts).reduce((s, v) => s + v, 0);
+      const branchRate = total > 0 ? Math.round(totalBranched / total * 100) : 0;
+      const allBranches = Object.entries(branchCounts).sort((a, b) => b[1] - a[1]);
 
       // 등급별
       const gradeCounts = {};
@@ -1671,8 +1684,8 @@
               </div>
               <div class="border border-neutral-200 rounded-2xl p-5">
                 <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">지사이관율</p>
-                <p class="text-3xl font-black">${transferRate}<span class="text-lg">%</span></p>
-                <p class="text-[9px] text-neutral-400 mt-1">${transferred}건 이관 / ${notTransferred}건 미이관</p>
+                <p class="text-3xl font-black">${branchRate}<span class="text-lg">%</span></p>
+                <p class="text-[9px] text-neutral-400 mt-1">${totalBranched}건 배정 / ${total - totalBranched}건 미배정</p>
               </div>
               <div class="border border-neutral-200 rounded-2xl p-5">
                 <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">개인정보 동의율</p>
@@ -1755,8 +1768,8 @@
                 ${allRegions.map(r => `
                 <div class="flex-1 flex flex-col items-center justify-end h-full min-w-0">
                   <p class="text-[8px] font-black mb-1">${r[1]}</p>
-                  <div class="w-full bg-neutral-800 rounded-t transition-all" style="height: ${Math.max(r[1] / maxRegion * 100, 4)}%"></div>
-                  <p class="text-[7px] text-neutral-400 mt-1.5 font-bold text-center leading-tight truncate w-full">${r[0].replace('특별시','').replace('광역시','').replace('특별자치시','').replace('특별자치도','')}</p>
+                  <div class="w-full ${r[0] === '해외' ? 'bg-blue-500' : 'bg-neutral-800'} rounded-t transition-all" style="height: ${Math.max(r[1] / maxRegion * 100, 4)}%"></div>
+                  <p class="text-[7px] ${r[0] === '해외' ? 'text-blue-500' : 'text-neutral-400'} mt-1.5 font-bold text-center leading-tight truncate w-full">${r[0].replace('특별시','').replace('광역시','').replace('특별자치시','').replace('특별자치도','')}</p>
                 </div>
                 `).join('')}
               </div>
@@ -1829,34 +1842,41 @@
                 </div>
               </div>
 
-              <!-- 지사이관 상태 -->
+              <!-- 지사이관 현황 (assignedBranch 기반) -->
               <div class="border border-neutral-200 rounded-2xl p-5">
                 <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-4">지사이관 현황</p>
-                <div class="flex flex-col items-center justify-center h-32">
-                  <div class="relative w-28 h-28">
+                <div class="flex flex-col items-center justify-center mb-3">
+                  <div class="relative w-24 h-24">
                     <svg viewBox="0 0 36 36" class="w-full h-full -rotate-90">
                       <circle cx="18" cy="18" r="15.9" fill="none" stroke="#f5f5f5" stroke-width="3"/>
                       <circle cx="18" cy="18" r="15.9" fill="none" stroke="#22c55e" stroke-width="3"
-                        stroke-dasharray="${transferRate} ${100 - transferRate}" stroke-linecap="round"/>
+                        stroke-dasharray="${branchRate} ${100 - branchRate}" stroke-linecap="round"/>
                     </svg>
                     <div class="absolute inset-0 flex flex-col items-center justify-center">
-                      <span class="text-xl font-black">${transferRate}%</span>
-                      <span class="text-[8px] text-neutral-400 font-bold">이관율</span>
+                      <span class="text-lg font-black">${branchRate}%</span>
+                      <span class="text-[7px] text-neutral-400 font-bold">배정률</span>
                     </div>
                   </div>
                 </div>
-                <div class="flex justify-center gap-4 mt-2">
-                  <div class="flex items-center gap-1.5">
-                    <div class="w-2 h-2 bg-green-500 rounded-full"></div>
-                    <span class="text-[9px] font-bold">이관 ${transferred}</span>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <div class="w-2 h-2 bg-red-400 rounded-full"></div>
-                    <span class="text-[9px] font-bold">미이관 ${notTransferred}</span>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <div class="w-2 h-2 bg-neutral-200 rounded-full"></div>
-                    <span class="text-[9px] font-bold">미지정 ${total - transferred - notTransferred}</span>
+                <div class="space-y-1.5 max-h-40 overflow-y-auto scrollbar-thin">
+                  ${allBranches.map(([name, cnt]) => {
+                    const colors = {'본사':'bg-black','현방':'bg-blue-500','부산지사':'bg-orange-500','강북지사':'bg-green-500','강동지사':'bg-purple-500','호남제주지사':'bg-teal-500','강남지사':'bg-pink-500'};
+                    const bg = colors[name] || 'bg-neutral-400';
+                    return `
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-1.5">
+                      <div class="w-2 h-2 ${bg} rounded-full"></div>
+                      <span class="text-[10px] font-bold">${name}</span>
+                    </div>
+                    <span class="text-[9px] font-black text-neutral-400">${cnt} <span class="text-neutral-300">(${total > 0 ? Math.round(cnt / total * 100) : 0}%)</span></span>
+                  </div>`;
+                  }).join('')}
+                  <div class="flex items-center justify-between pt-1 border-t border-neutral-100">
+                    <div class="flex items-center gap-1.5">
+                      <div class="w-2 h-2 bg-neutral-200 rounded-full"></div>
+                      <span class="text-[10px] font-bold text-neutral-400">미배정</span>
+                    </div>
+                    <span class="text-[9px] font-black text-neutral-400">${total - totalBranched}</span>
                   </div>
                 </div>
               </div>
@@ -1980,11 +2000,17 @@
                   <input type="text" id="crmAddress" class="input-base mt-1" placeholder="상세 주소" />
                 </div>
                 <div>
-                  <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">지사이관 여부</label>
-                  <select id="crmTransfer" class="input-base mt-1">
-                    <option value="">선택</option>
-                    <option value="이관">이관</option>
-                    <option value="미이관">미이관</option>
+                  <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">지사 배정</label>
+                  <select id="crmAssignedBranch" class="input-base mt-1">
+                    <option value="">미배정</option>
+                    <option value="본사">본사</option>
+                    <option value="현방">현방</option>
+                    <option value="강남지사">강남지사</option>
+                    <option value="강동지사">강동지사</option>
+                    <option value="강북지사">강북지사</option>
+                    <option value="부산지사">부산지사</option>
+                    <option value="호남제주지사">호남제주지사</option>
+                    <option value="중부지사">중부지사</option>
                   </select>
                 </div>
               </div>
@@ -2051,7 +2077,7 @@
                       <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">등급</th>
                       <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest hidden md:table-cell">상담내용</th>
                       <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest hidden md:table-cell">지역</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">지사이관</th>
+                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">지사배정</th>
                       <th class="px-3 py-3 text-center font-black text-[9px] text-neutral-400 uppercase tracking-widest w-16">관리</th>
                     </tr>
                   </thead>
@@ -2071,7 +2097,7 @@
                       <td class="px-3 py-3"><span class="text-[9px] font-black px-2 py-0.5 rounded border ${gradeClass}">${displayGrade}</span></td>
                       <td class="px-3 py-3 text-neutral-500 max-w-[200px] truncate hidden md:table-cell">${c.content || '-'}</td>
                       <td class="px-3 py-3 text-neutral-500 hidden md:table-cell">${[c.province, c.district].filter(Boolean).join(' ') || '-'}</td>
-                      <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${c.transfer === '이관' ? 'bg-green-50 text-green-600' : c.transfer === '미이관' ? 'bg-red-50 text-red-500' : 'text-neutral-400'}">${c.transfer || '-'}</span></td>
+                      <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${c.assignedBranch ? 'bg-green-50 text-green-600' : 'text-neutral-400'}">${c.assignedBranch || '-'}</span></td>
                       <td class="px-3 py-3 text-center">
                         <button onclick="editCRMGrade('${c.id}','${displayGrade}')" class="text-neutral-300 hover:text-black transition-colors" title="등급 변경">
                           <i data-lucide="pencil" class="w-3 h-3"></i>
@@ -2166,7 +2192,7 @@
       const province = document.getElementById('crmProvince').value;
       const district = document.getElementById('crmDistrict').value;
       const address = document.getElementById('crmAddress').value.trim();
-      const transfer = document.getElementById('crmTransfer').value;
+      const assignedBranch = document.getElementById('crmAssignedBranch').value;
       const content = document.getElementById('crmContent').value.trim();
 
       if (!channel) { alert('문의채널을 선택하세요.'); return; }
@@ -2184,13 +2210,13 @@
           brand, date, year: yearStr, month: monthStr,
           channel, consent, phone, email,
           product, custType, grade: grade2, grade2,
-          province, district, address, transfer, content,
+          province, district, address, assignedBranch, content,
           createdAt: serverTimestamp()
         });
         alert('고객 정보가 저장되었습니다.');
         toggleCRMForm();
         // 폼 초기화
-        ['crmChannel','crmPhone','crmEmail','crmGrade2','crmProvince','crmDistrict','crmAddress','crmTransfer','crmContent'].forEach(id => {
+        ['crmChannel','crmPhone','crmEmail','crmGrade2','crmProvince','crmDistrict','crmAddress','crmAssignedBranch','crmContent'].forEach(id => {
           const el = document.getElementById(id);
           if (el) el.tagName === 'SELECT' ? el.selectedIndex = 0 : el.value = '';
         });
@@ -2416,7 +2442,7 @@
         '도/광역시': c.province || '',
         '시/군': c.district || '',
         '주소': c.address || '',
-        '지사이관 여부': c.transfer || '',
+        '지사배정': c.assignedBranch || '',
       }));
       const ws = XLSX.utils.json_to_sheet(rows);
       const colWidths = [6,8,8,6,12,10,10,14,20,10,10,8,40,10,10,25,10];
