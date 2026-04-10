@@ -391,7 +391,8 @@ function calcRow(el) {
 
     // [특수견적] 수동 단가 고정 모드: 사용자가 직접 입력한 단가를 유지
     if (priceInput.dataset.manualOverride === "true") {
-        const manualPrice = parseNum(priceInput.value);
+        const manualPrice = parseFloat(priceInput.dataset.manualPrice) || parseNum(priceInput.value);
+        priceInput.value = manualPrice || '';
         tr.querySelector('.sum').textContent = formatNumber(manualPrice * parseNum(tr.querySelector('.qty').value));
         syncDirectCosts(); calcTotal(); saveData();
         return;
@@ -422,9 +423,19 @@ function calcRow(el) {
 }
 
 function handleManualPrice(inp) {
-    inp.dataset.basePrice = parseNum(inp.value);
+    const rawVal = parseNum(inp.value);
     inp.dataset.manualOverride = "true";
+    inp.dataset.manualPrice = rawVal;
     // 수동 입력 시 잠금 아이콘 표시
+    showPriceLock(inp);
+    // 수동 모드에서는 직접 합계만 갱신
+    const tr = inp.closest('tr');
+    const qty = parseNum(tr.querySelector('.qty').value);
+    tr.querySelector('.sum').textContent = formatNumber(rawVal * qty);
+    syncDirectCosts(); calcTotal(); saveData();
+}
+
+function showPriceLock(inp) {
     let lockIcon = inp.parentElement.querySelector('.lock-icon');
     if (!lockIcon) {
         lockIcon = document.createElement('span');
@@ -435,6 +446,7 @@ function handleManualPrice(inp) {
         lockIcon.onclick = function(e) {
             e.stopPropagation();
             inp.dataset.manualOverride = "";
+            inp.dataset.manualPrice = "";
             inp.dataset.basePrice = 0;
             lockIcon.remove();
             calcRow(inp);
@@ -442,7 +454,6 @@ function handleManualPrice(inp) {
         inp.parentElement.style.position = 'relative';
         inp.parentElement.appendChild(lockIcon);
     }
-    calcRow(inp);
 }
 
 function addConsRow(item = {}) {
@@ -514,9 +525,16 @@ function syncDirectCosts() {
     const usedKeys = new Set();
     consRows.forEach(r => {
         const sel = r.querySelector('.cons-prod-select');
-        if (sel && sel.value) { if (counts[sel.value]) { r.querySelector('.c-qty').value = counts[sel.value]; calcCons(sel); usedKeys.add(sel.value); } else r.remove(); }
+        if (sel && sel.value) {
+            if (counts[sel.value]) {
+                // 사용자가 수동 편집한 행은 수량 자동변경 안함
+                if (!r.dataset.userEdited) r.querySelector('.c-qty').value = counts[sel.value];
+                calcCons(sel); usedKeys.add(sel.value);
+            } else r.remove();
+        }
     });
-    for (const k in counts) if (!usedKeys.has(k)) { addDirectConsRow(); const rows = document.querySelectorAll('#cons-tbody tr'); const target = rows[0]; target.querySelector('.cons-prod-select').value = k; target.querySelector('.c-qty').value = counts[k]; setConsPrice(target.querySelector('.cons-prod-select')); }
+    // 사용자가 수동 삭제한 항목은 자동 재생성하지 않음
+    for (const k in counts) if (!usedKeys.has(k) && !deletedDirectCostKeys.has(k)) { addDirectConsRow(); const rows = document.querySelectorAll('#cons-tbody tr'); const target = rows[0]; target.querySelector('.cons-prod-select').value = k; target.querySelector('.c-qty').value = counts[k]; setConsPrice(target.querySelector('.cons-prod-select')); }
 }
 
 /* [v1.8] 지역별 비용 보정: '전북특별자치도' 포함하여 전라도 권역 강화 */
@@ -666,7 +684,17 @@ function formatDiscount(el) {
     calcTotal();
 }
 
-function delRow(btn) { btn.closest('tr').remove(); syncDirectCosts(); calcTotal(); }
+// 사용자가 수동 삭제한 직접공사비 추적
+let deletedDirectCostKeys = new Set();
+
+function delRow(btn) {
+    const tr = btn.closest('tr');
+    // 직접공사비(cons-prod-select) 행 삭제 시 추적
+    const sel = tr.querySelector('.cons-prod-select');
+    if (sel && sel.value) deletedDirectCostKeys.add(sel.value);
+    tr.remove();
+    syncDirectCosts(); calcTotal();
+}
 function setupAutoSave() { document.querySelectorAll('input, select, textarea').forEach(el => el.addEventListener('input', () => { clearTimeout(autoSaveTimer); autoSaveTimer = setTimeout(saveData, 1000); })); }
 function saveData(manual = false) { const inputs = {}; document.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => inputs[el.id] = el.value); localStorage.setItem(STORAGE_KEY, JSON.stringify(inputs)); }
 function resetData() { if (confirm("모든 데이터를 초기화하시겠습니까?")) { localStorage.removeItem(STORAGE_KEY); location.reload(); } }
