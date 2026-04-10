@@ -29,7 +29,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteField } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteField, collection, addDoc, getDocs, query, orderBy, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyDs8IJANSBncJHcFFrF03pLM7JvEOppcY0",
@@ -47,7 +47,7 @@
     const auth = getAuth(app);
     const db = getFirestore(app);
 
-    window.OSKA_DB = { auth, db, appId, initialToken, signInWithCustomToken, signInAnonymously, doc, getDoc, setDoc, updateDoc, deleteField };
+    window.OSKA_DB = { auth, db, appId, initialToken, signInWithCustomToken, signInAnonymously, doc, getDoc, setDoc, updateDoc, deleteField, collection, addDoc, getDocs, query, orderBy, deleteDoc, serverTimestamp };
   </script>
 
   <style>
@@ -269,6 +269,8 @@
     function render() {
       const app = document.getElementById('app');
       if (!state.isConfigLoaded) return;
+      if (state.currentView === 'register') { app.innerHTML = renderRegisterForm(); lucide.createIcons(); bindEvents(); return; }
+      if (state.currentView === 'register_complete') { app.innerHTML = renderRegisterComplete(); lucide.createIcons(); bindEvents(); return; }
       if (!state.isLoggedIn) app.innerHTML = renderLogin();
       else if (state.currentView === 'admin') app.innerHTML = renderAdmin();
       else if (state.currentView !== 'dashboard') app.innerHTML = renderIframeView();
@@ -303,10 +305,161 @@
               ${state.loginError ? `<p class="text-red-600 text-[10px] font-bold text-center pt-2 uppercase tracking-tight">${state.loginError}</p>` : ''}
               <button type="submit" class="w-full h-12 mt-4 bg-black text-white rounded-xl font-black uppercase tracking-widest hover:bg-neutral-800 active:scale-[0.98] transition-all text-xs">Sign In</button>
             </form>
+            <div class="mt-6 text-center">
+              <p class="text-[10px] text-neutral-300 mb-2">아직 계정이 없으신가요?</p>
+              <button id="btnRegister" class="text-[11px] font-black text-neutral-500 hover:text-black transition-colors underline underline-offset-4 decoration-neutral-300 hover:decoration-black">
+                업체등록 요청
+              </button>
+            </div>
           </div>
           ${renderConfidentialNotice()}
         </div>
       `;
+    }
+
+    // ===== 업체등록 요청 =====
+    function renderRegisterForm() {
+      return `
+        <div class="min-h-screen bg-white flex flex-col items-center justify-center p-6 animate-fade-in">
+          <div class="w-full max-w-lg">
+            <div class="text-center mb-10">
+              <img src="assets/오스카CI_04LogoBLACK_1.png" alt="OSKA Logo" class="h-12 mx-auto mb-6 object-contain" onerror="this.style.display='none'">
+              <h1 class="text-xl font-black tracking-tight uppercase">업체등록 요청</h1>
+              <p class="text-[10px] text-neutral-400 font-bold uppercase tracking-widest mt-2">Business Registration Request</p>
+            </div>
+
+            <form id="registerForm" class="space-y-5">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">업체명 <span class="text-red-400">*</span></label>
+                  <input type="text" id="regCompanyName" class="w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-sm focus:border-black outline-none transition-all mt-1" placeholder="예: 강남지사, ○○인테리어" required />
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">업체 유형 <span class="text-red-400">*</span></label>
+                  <select id="regCompanyType" class="w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-sm focus:border-black outline-none transition-all mt-1" required>
+                    <option value="">선택</option>
+                    <option value="branch">지사</option>
+                    <option value="dealer">대리점</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">대표자명 <span class="text-red-400">*</span></label>
+                  <input type="text" id="regOwnerName" class="w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-sm focus:border-black outline-none transition-all mt-1" placeholder="홍길동" required />
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">담당자명 <span class="text-red-400">*</span></label>
+                  <input type="text" id="regManagerName" class="w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-sm focus:border-black outline-none transition-all mt-1" placeholder="담당자 이름" required />
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">연락처 <span class="text-red-400">*</span></label>
+                  <input type="tel" id="regPhone" class="w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-sm focus:border-black outline-none transition-all mt-1" placeholder="010-0000-0000" required />
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">이메일</label>
+                  <input type="email" id="regEmail" class="w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-sm focus:border-black outline-none transition-all mt-1" placeholder="email@example.com" />
+                </div>
+              </div>
+
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">사업자등록번호 <span class="text-red-400">*</span></label>
+                <input type="text" id="regBizNumber" class="w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-sm focus:border-black outline-none transition-all mt-1" placeholder="000-00-00000" maxlength="12" required />
+              </div>
+
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">사업장 주소</label>
+                <input type="text" id="regAddress" class="w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-sm focus:border-black outline-none transition-all mt-1" placeholder="사업장 주소" />
+              </div>
+
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">요청 사항 / 메모</label>
+                <textarea id="regMemo" class="w-full px-4 py-3 bg-white border border-neutral-200 rounded-xl font-bold text-sm focus:border-black outline-none transition-all mt-1" rows="3" placeholder="추가 요청사항이 있으면 입력해주세요"></textarea>
+              </div>
+
+              <div class="bg-neutral-50 rounded-xl p-4 border border-neutral-100">
+                <p class="text-[10px] text-neutral-500 font-bold leading-relaxed">
+                  <i data-lucide="info" class="w-3 h-3 inline -mt-0.5 mr-1"></i>
+                  등록 요청 후 본사 승인이 완료되면 로그인 계정이 생성됩니다.<br>
+                  <span class="text-neutral-400">초기 비밀번호: 업체명 + 사업자등록번호 뒤 5자리</span>
+                </p>
+              </div>
+
+              <div class="flex gap-3 pt-2">
+                <button type="button" id="btnBackToLogin" class="flex-1 h-12 border border-neutral-200 rounded-xl font-black uppercase tracking-widest hover:border-black active:scale-[0.98] transition-all text-xs text-neutral-400 hover:text-black">
+                  돌아가기
+                </button>
+                <button type="submit" class="flex-[2] h-12 bg-black text-white rounded-xl font-black uppercase tracking-widest hover:bg-neutral-800 active:scale-[0.98] transition-all text-xs">
+                  등록 요청하기
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderRegisterComplete() {
+      return `
+        <div class="min-h-screen bg-white flex flex-col items-center justify-center p-6 animate-fade-in">
+          <div class="w-full max-w-sm text-center">
+            <div class="w-16 h-16 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-6">
+              <i data-lucide="check-circle" class="w-8 h-8 text-green-500"></i>
+            </div>
+            <h2 class="text-xl font-black tracking-tight mb-2">등록 요청 완료</h2>
+            <p class="text-sm text-neutral-400 mb-8 leading-relaxed">
+              업체등록 요청이 접수되었습니다.<br>
+              본사 관리자 승인 후 로그인이 가능합니다.
+            </p>
+            <button id="btnBackToLogin2" class="w-full h-12 bg-black text-white rounded-xl font-black uppercase tracking-widest hover:bg-neutral-800 active:scale-[0.98] transition-all text-xs">
+              로그인 화면으로 돌아가기
+            </button>
+          </div>
+        </div>
+      `;
+    }
+
+    async function submitRegistration(e) {
+      e.preventDefault();
+      const companyName = document.getElementById('regCompanyName').value.trim();
+      const companyType = document.getElementById('regCompanyType').value;
+      const ownerName = document.getElementById('regOwnerName').value.trim();
+      const managerName = document.getElementById('regManagerName').value.trim();
+      const phone = document.getElementById('regPhone').value.trim();
+      const email = document.getElementById('regEmail').value.trim();
+      const bizNumber = document.getElementById('regBizNumber').value.trim();
+      const address = document.getElementById('regAddress').value.trim();
+      const memo = document.getElementById('regMemo').value.trim();
+
+      if (!companyName || !companyType || !ownerName || !managerName || !phone || !bizNumber) {
+        alert('필수 항목을 모두 입력해주세요.');
+        return;
+      }
+
+      // 사업자등록번호 숫자만 추출해서 최소 10자리 확인
+      const bizDigits = bizNumber.replace(/[^0-9]/g, '');
+      if (bizDigits.length < 10) {
+        alert('사업자등록번호를 정확히 입력해주세요. (10자리)');
+        return;
+      }
+
+      try {
+        const { db, collection, addDoc, serverTimestamp } = window.OSKA_DB;
+        await addDoc(collection(db, 'registration_requests'), {
+          companyName, companyType, ownerName, managerName,
+          phone, email, bizNumber, address, memo,
+          status: 'pending',    // pending → approved / rejected
+          createdAt: serverTimestamp()
+        });
+        setState({ currentView: 'register_complete' });
+      } catch(e) {
+        console.error('Registration error:', e);
+        alert('등록 요청 중 오류가 발생했습니다: ' + e.message);
+      }
     }
 
     function renderIframeView() {
@@ -579,12 +732,14 @@
         ADMIN_PASSWORD = newPw.trim();
         saveAdminPasswordToFirestore();
         setState({ currentView: 'admin', adminTab: 'accounts' });
+        loadRegistrationRequests();
         return;
       }
       const input = prompt('관리자 비밀번호를 입력하세요:');
       if (input === null) return;
       if (input.trim() === ADMIN_PASSWORD) {
         setState({ currentView: 'admin', adminTab: 'accounts' });
+        loadRegistrationRequests();
       } else {
         alert('관리자 비밀번호가 일치하지 않습니다.');
       }
@@ -638,16 +793,20 @@
                 ${state.adminMsg}
               </div>` : ''}
 
-            <div class="flex gap-2 mb-8">
+            <div class="flex gap-2 mb-8 flex-wrap">
               <button class="admin-tab px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'accounts' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="accounts">
                 <i data-lucide="users" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>계정 관리
+              </button>
+              <button class="admin-tab px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'registration' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="registration">
+                <i data-lucide="user-plus" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>등록 요청
+                ${state._regRequests && state._regRequests.filter(r => r.status === 'pending').length > 0 ? `<span class="ml-1 bg-red-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">${state._regRequests.filter(r => r.status === 'pending').length}</span>` : ''}
               </button>
               <button class="admin-tab px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'archive' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="archive">
                 <i data-lucide="archive" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>Archive 관리
               </button>
             </div>
 
-            ${state.adminTab === 'accounts' ? renderAdminAccounts(allBranches) : renderAdminArchive()}
+            ${state.adminTab === 'accounts' ? renderAdminAccounts(allBranches) : state.adminTab === 'registration' ? renderAdminRegistration() : renderAdminArchive()}
           </main>
         </div>
       `;
@@ -763,6 +922,180 @@
       `;
     }
 
+    // ===== 업체 등록 요청 관리 (어드민) =====
+    async function loadRegistrationRequests() {
+      try {
+        const { db, collection, getDocs, query, orderBy } = window.OSKA_DB;
+        const q = query(collection(db, 'registration_requests'), orderBy('createdAt', 'desc'));
+        const snap = await getDocs(q);
+        const requests = [];
+        snap.forEach(doc => requests.push({ id: doc.id, ...doc.data() }));
+        state._regRequests = requests;
+        render();
+      } catch(e) {
+        console.error('Load registrations error:', e);
+        // fallback without orderBy
+        try {
+          const { db, collection, getDocs } = window.OSKA_DB;
+          const snap = await getDocs(collection(db, 'registration_requests'));
+          const requests = [];
+          snap.forEach(doc => requests.push({ id: doc.id, ...doc.data() }));
+          state._regRequests = requests;
+          render();
+        } catch(e2) { console.error('Fallback load error:', e2); }
+      }
+    }
+
+    async function approveRegistration(reqId) {
+      const req = (state._regRequests || []).find(r => r.id === reqId);
+      if (!req) return;
+
+      // 초기 비밀번호: 업체명 + 사업자등록번호 뒤5자리
+      const bizDigits = (req.bizNumber || '').replace(/[^0-9]/g, '');
+      const last5 = bizDigits.slice(-5);
+      const initialPassword = req.companyName + last5;
+
+      // 계정 추가
+      ACCOUNTS[req.companyName] = initialPassword;
+      ACCOUNT_TYPES[req.companyName] = req.companyType || 'branch';
+      if (req.managerName) ACCOUNT_MANAGERS[req.companyName] = req.managerName;
+
+      // 순서에 추가
+      if (!ACCOUNT_SETTINGS.order.includes(req.companyName)) {
+        ACCOUNT_SETTINGS.order.push(req.companyName);
+      }
+
+      try {
+        const { db, appId, doc, updateDoc } = window.OSKA_DB;
+        const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+        await updateDoc(configRef, {
+          accounts: ACCOUNTS,
+          accountTypes: ACCOUNT_TYPES,
+          accountManagers: ACCOUNT_MANAGERS,
+          accountSettings: ACCOUNT_SETTINGS
+        });
+
+        // 요청 상태 업데이트
+        const reqRef = doc(db, 'registration_requests', reqId);
+        await updateDoc(reqRef, { status: 'approved', approvedAt: new Date().toISOString(), initialPassword });
+
+        // 로컬 상태 업데이트
+        req.status = 'approved';
+        req.initialPassword = initialPassword;
+
+        showAdminMsg(`"${req.companyName}" 승인 완료! 초기 비밀번호: ${initialPassword}`, 'success');
+        render();
+      } catch(e) {
+        console.error('Approve error:', e);
+        showAdminMsg('승인 처리 중 오류 발생: ' + e.message, 'error');
+      }
+    }
+
+    async function rejectRegistration(reqId) {
+      const req = (state._regRequests || []).find(r => r.id === reqId);
+      if (!req) return;
+      if (!confirm(`"${req.companyName}" 등록 요청을 거절하시겠습니까?`)) return;
+
+      try {
+        const { db, doc, updateDoc } = window.OSKA_DB;
+        const reqRef = doc(db, 'registration_requests', reqId);
+        await updateDoc(reqRef, { status: 'rejected', rejectedAt: new Date().toISOString() });
+        req.status = 'rejected';
+        showAdminMsg(`"${req.companyName}" 요청이 거절되었습니다.`, 'error');
+        render();
+      } catch(e) {
+        console.error('Reject error:', e);
+        showAdminMsg('거절 처리 중 오류 발생', 'error');
+      }
+    }
+
+    function renderAdminRegistration() {
+      const requests = state._regRequests || [];
+      const pending = requests.filter(r => r.status === 'pending');
+      const processed = requests.filter(r => r.status !== 'pending');
+      const TYPE_LABEL = { branch: '지사', dealer: '대리점' };
+
+      return `
+        <div class="space-y-6">
+          <div class="flex items-center justify-between">
+            <h3 class="text-sm font-black uppercase tracking-widest">등록 요청 관리</h3>
+            <button onclick="loadRegistrationRequests()" class="text-[10px] font-black text-neutral-400 hover:text-black transition-colors flex items-center gap-1.5 border border-neutral-200 px-3 py-1.5 rounded-lg hover:bg-white">
+              <i data-lucide="refresh-cw" class="w-3 h-3"></i> 새로고침
+            </button>
+          </div>
+
+          ${pending.length > 0 ? `
+          <div>
+            <p class="text-[9px] font-black text-red-500 uppercase tracking-widest mb-3">대기 중 (${pending.length}건)</p>
+            <div class="space-y-3">
+              ${pending.map(r => `
+              <div class="bg-white border-2 border-amber-200 rounded-2xl p-5 shadow-sm">
+                <div class="flex items-start justify-between mb-4">
+                  <div>
+                    <div class="flex items-center gap-2 mb-1">
+                      <span class="text-lg font-black">${r.companyName}</span>
+                      <span class="text-[8px] font-black px-2 py-0.5 rounded ${r.companyType === 'dealer' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">${TYPE_LABEL[r.companyType] || r.companyType}</span>
+                      <span class="text-[8px] font-black px-2 py-0.5 rounded bg-amber-100 text-amber-600">대기중</span>
+                    </div>
+                    <p class="text-[10px] text-neutral-400">${r.createdAt ? new Date(r.createdAt.seconds ? r.createdAt.seconds * 1000 : r.createdAt).toLocaleString('ko-KR') : '-'}</p>
+                  </div>
+                  <div class="flex gap-2">
+                    <button onclick="approveRegistration('${r.id}')" class="px-4 py-2 bg-green-500 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-600 active:scale-[0.97] transition-all">승인</button>
+                    <button onclick="rejectRegistration('${r.id}')" class="px-4 py-2 bg-white border border-red-200 text-red-500 rounded-lg text-[10px] font-black uppercase hover:bg-red-50 active:scale-[0.97] transition-all">거절</button>
+                  </div>
+                </div>
+                <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-[10px]">
+                  <div><span class="text-neutral-400 font-bold">대표자:</span> <span class="font-black">${r.ownerName || '-'}</span></div>
+                  <div><span class="text-neutral-400 font-bold">담당자:</span> <span class="font-black">${r.managerName || '-'}</span></div>
+                  <div><span class="text-neutral-400 font-bold">연락처:</span> <span class="font-black">${r.phone || '-'}</span></div>
+                  <div><span class="text-neutral-400 font-bold">이메일:</span> <span class="font-black">${r.email || '-'}</span></div>
+                  <div><span class="text-neutral-400 font-bold">사업자번호:</span> <span class="font-black">${r.bizNumber || '-'}</span></div>
+                  <div><span class="text-neutral-400 font-bold">주소:</span> <span class="font-black">${r.address || '-'}</span></div>
+                </div>
+                ${r.memo ? `<div class="mt-3 p-3 bg-neutral-50 rounded-lg text-[10px]"><span class="text-neutral-400 font-bold">메모:</span> ${r.memo}</div>` : ''}
+                <div class="mt-3 p-3 bg-blue-50 rounded-lg text-[10px] text-blue-600 font-bold">
+                  <i data-lucide="key" class="w-3 h-3 inline -mt-0.5 mr-1"></i>
+                  승인 시 초기 비밀번호: <span class="font-black">${r.companyName}${(r.bizNumber || '').replace(/[^0-9]/g, '').slice(-5)}</span>
+                </div>
+              </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : `
+          <div class="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
+            <i data-lucide="inbox" class="w-8 h-8 text-neutral-200 mx-auto mb-3"></i>
+            <p class="text-sm text-neutral-300 font-bold">대기 중인 등록 요청이 없습니다</p>
+          </div>
+          `}
+
+          ${processed.length > 0 ? `
+          <div>
+            <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-3">처리 완료 (${processed.length}건)</p>
+            <div class="space-y-2">
+              ${processed.map(r => `
+              <div class="bg-white border border-neutral-100 rounded-xl p-4 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-lg flex items-center justify-center ${r.status === 'approved' ? 'bg-green-50' : 'bg-red-50'}">
+                    <i data-lucide="${r.status === 'approved' ? 'check' : 'x'}" class="w-4 h-4 ${r.status === 'approved' ? 'text-green-500' : 'text-red-500'}"></i>
+                  </div>
+                  <div>
+                    <span class="font-black text-sm">${r.companyName}</span>
+                    <span class="text-[8px] font-black ml-2 px-1.5 py-0.5 rounded ${r.status === 'approved' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}">${r.status === 'approved' ? '승인' : '거절'}</span>
+                  </div>
+                </div>
+                <div class="text-right">
+                  ${r.status === 'approved' && r.initialPassword ? `<p class="text-[9px] text-neutral-400">비밀번호: <span class="font-black text-neutral-600">${r.initialPassword}</span></p>` : ''}
+                  <p class="text-[9px] text-neutral-300">${r.companyType === 'dealer' ? '대리점' : '지사'} · ${r.phone || ''}</p>
+                </div>
+              </div>
+              `).join('')}
+            </div>
+          </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
     function renderAdminArchive() {
       return `
         <div class="space-y-6">
@@ -860,6 +1193,12 @@
         const loginPwInput = document.getElementById('loginPw');
         if (loginPwInput) loginPwInput.addEventListener('input', (e) => state.loginPw = e.target.value);
       }
+      // 업체등록 요청
+      if (document.getElementById('btnRegister')) document.getElementById('btnRegister').addEventListener('click', () => setState({ currentView: 'register' }));
+      if (document.getElementById('btnBackToLogin')) document.getElementById('btnBackToLogin').addEventListener('click', () => setState({ currentView: 'dashboard', isLoggedIn: false }));
+      if (document.getElementById('btnBackToLogin2')) document.getElementById('btnBackToLogin2').addEventListener('click', () => setState({ currentView: 'dashboard', isLoggedIn: false }));
+      if (document.getElementById('registerForm')) document.getElementById('registerForm').addEventListener('submit', submitRegistration);
+
       if (document.getElementById('logoutBtn')) document.getElementById('logoutBtn').addEventListener('click', handleLogout);
       if (document.getElementById('exitView')) document.getElementById('exitView').addEventListener('click', () => setState({ currentView: 'dashboard' }));
       if (document.getElementById('btnQuotation')) document.getElementById('btnQuotation').addEventListener('click', () => setState({currentView: 'quotation'}));
