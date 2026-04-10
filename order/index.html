@@ -2134,7 +2134,7 @@
                       <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest hidden md:table-cell">상담내용</th>
                       <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest hidden md:table-cell">지역</th>
                       <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">지사배정</th>
-                      <th class="px-3 py-3 text-center font-black text-[9px] text-neutral-400 uppercase tracking-widest w-16">관리</th>
+                      <th class="px-3 py-3 text-center font-black text-[9px] text-neutral-400 uppercase tracking-widest w-24">관리</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2156,9 +2156,14 @@
                       <td class="px-3 py-3 text-neutral-500 hidden md:table-cell">${[c.province, c.district].filter(Boolean).join(' ') || '-'}</td>
                       <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${c.assignedBranch ? 'bg-green-50 text-green-600' : 'text-neutral-400'}">${c.assignedBranch || '-'}</span></td>
                       <td class="px-3 py-3 text-center">
-                        <button onclick="openEditPanel('${c.id}')" class="text-neutral-300 hover:text-black transition-colors" title="고객 정보 수정">
-                          <i data-lucide="pencil" class="w-3 h-3"></i>
-                        </button>
+                        <div class="flex items-center justify-center gap-1.5">
+                          <button onclick="openCustomerHistory('${c.phone || ''}')" class="text-neutral-300 hover:text-blue-500 transition-colors" title="고객관리">
+                            <i data-lucide="user-search" class="w-3.5 h-3.5"></i>
+                          </button>
+                          <button onclick="openEditPanel('${c.id}')" class="text-neutral-300 hover:text-black transition-colors" title="정보 수정">
+                            <i data-lucide="pencil" class="w-3 h-3"></i>
+                          </button>
+                        </div>
                       </td>
                     </tr>`;
                     }).join('') : `
@@ -2583,6 +2588,123 @@
       XLSX.utils.book_append_sheet(wb, ws, 'CRM Data');
       const fileName = `CRM_${crmFilter === '전체' ? '전체' : crmFilter}_${new Date().toISOString().slice(0,10)}.xlsx`;
       XLSX.writeFile(wb, fileName);
+    }
+
+    // ===== 고객관리 (전화번호 기준 문의 이력) =====
+    function openCustomerHistory(phone) {
+      if (!phone || phone === '-') { alert('전화번호 정보가 없는 고객입니다.'); return; }
+      const records = customers.filter(c => c.phone && c.phone.replace(/[^0-9]/g, '') === phone.replace(/[^0-9]/g, '')).sort((a, b) => {
+        const da = a.date || ''; const db2 = b.date || '';
+        return db2.localeCompare(da);
+      });
+      if (records.length === 0) { alert('해당 전화번호의 고객 정보를 찾을 수 없습니다.'); return; }
+      const rep = records[0];
+      const totalInquiries = records.length;
+      const products = [...new Set(records.flatMap(r => (r.product || '').split(',').map(p => p.trim()).filter(Boolean)))];
+      const channels = [...new Set(records.map(r => r.channel).filter(Boolean))];
+      const grades = records.map(r => r.grade2).filter(g => CRM_GRADES.includes(g));
+      const latestGrade = grades.length > 0 ? grades[0] : '-';
+      const gradeClass = CRM_GRADE_COLORS[latestGrade] || 'bg-neutral-50 text-neutral-400 border-neutral-200';
+      const dotClass = CRM_GRADE_DOT[latestGrade] || 'bg-neutral-300';
+
+      const panel = document.createElement('div');
+      panel.id = 'customerHistoryPanel';
+      panel.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm';
+      panel.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
+          <!-- 헤더 -->
+          <div class="flex items-center justify-between p-5 border-b border-neutral-100">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
+                <i data-lucide="user" class="w-5 h-5 text-blue-500"></i>
+              </div>
+              <div>
+                <h3 class="text-sm font-black flex items-center gap-2">고객 관리
+                  <span class="text-[9px] font-black px-2 py-0.5 rounded border ${gradeClass}">${latestGrade}</span>
+                </h3>
+                <p class="text-[10px] text-neutral-400 mt-0.5">${phone}</p>
+              </div>
+            </div>
+            <button onclick="closeCustomerHistory()" class="text-neutral-400 hover:text-black transition-colors">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+
+          <!-- 고객 요약 -->
+          <div class="p-5 border-b border-neutral-100">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div class="bg-blue-50 rounded-xl p-3 text-center">
+                <p class="text-[9px] font-black text-blue-400 uppercase tracking-widest">총 문의</p>
+                <p class="text-xl font-black text-blue-600 mt-1">${totalInquiries}건</p>
+              </div>
+              <div class="bg-neutral-50 rounded-xl p-3 text-center">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">이메일</p>
+                <p class="text-[10px] font-bold text-neutral-600 mt-1 truncate">${rep.email || '-'}</p>
+              </div>
+              <div class="bg-neutral-50 rounded-xl p-3 text-center">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">지역</p>
+                <p class="text-[10px] font-bold text-neutral-600 mt-1">${[rep.province, rep.district].filter(Boolean).join(' ') || '-'}</p>
+              </div>
+              <div class="bg-neutral-50 rounded-xl p-3 text-center">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">지사배정</p>
+                <p class="text-[10px] font-bold text-neutral-600 mt-1">${rep.assignedBranch || '-'}</p>
+              </div>
+            </div>
+            ${products.length > 0 ? `
+            <div class="mt-3">
+              <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1.5">관심 제품</p>
+              <div class="flex flex-wrap gap-1">${products.map(p => `<span class="text-[9px] font-bold px-2 py-0.5 rounded-full bg-neutral-100 text-neutral-600">${p}</span>`).join('')}</div>
+            </div>` : ''}
+            ${channels.length > 0 ? `
+            <div class="mt-3">
+              <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1.5">문의 채널</p>
+              <div class="flex flex-wrap gap-1">${channels.map(ch => `<span class="text-[9px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-600">${ch}</span>`).join('')}</div>
+            </div>` : ''}
+          </div>
+
+          <!-- 문의 이력 타임라인 -->
+          <div class="p-5">
+            <h4 class="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-4">문의 이력</h4>
+            <div class="space-y-0">
+              ${records.map((r, idx) => {
+                const rGrade = CRM_GRADES.includes(r.grade2) ? r.grade2 : '-';
+                const rGradeClass = CRM_GRADE_COLORS[rGrade] || 'bg-neutral-50 text-neutral-400 border-neutral-200';
+                const rDot = CRM_GRADE_DOT[rGrade] || 'bg-neutral-300';
+                const isLast = idx === records.length - 1;
+                return `
+              <div class="flex gap-3 ${!isLast ? 'pb-4' : ''}">
+                <div class="flex flex-col items-center">
+                  <div class="w-2.5 h-2.5 rounded-full ${rDot} mt-1 flex-shrink-0"></div>
+                  ${!isLast ? '<div class="w-px flex-1 bg-neutral-200 mt-1"></div>' : ''}
+                </div>
+                <div class="flex-1 min-w-0 ${!isLast ? 'border-b border-neutral-50 pb-4' : ''}">
+                  <div class="flex items-center justify-between gap-2">
+                    <div class="flex items-center gap-2">
+                      <span class="text-[10px] font-black text-neutral-800">${r.date || '-'}</span>
+                      <span class="text-[9px] font-black px-1.5 py-0.5 rounded border ${rGradeClass}">${rGrade}</span>
+                      <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full ${r.brand === '테라까사' ? 'bg-orange-50 text-orange-600' : 'bg-neutral-100 text-neutral-600'}">${r.brand || '-'}</span>
+                    </div>
+                    <span class="text-[9px] text-neutral-400 font-bold flex-shrink-0">${r.channel || ''}</span>
+                  </div>
+                  <div class="mt-1.5 flex flex-wrap gap-1">
+                    ${(r.product || '').split(',').map(p => p.trim()).filter(Boolean).map(p => `<span class="text-[8px] font-bold px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500">${p}</span>`).join('') || '<span class="text-[8px] text-neutral-300">제품 미지정</span>'}
+                  </div>
+                  <p class="mt-1.5 text-[10px] text-neutral-500 leading-relaxed line-clamp-2">${r.content || '-'}</p>
+                  <div class="mt-1 text-[9px] text-neutral-300">No. ${r.no || '-'} · ${r.custType || '-'} · ${[r.province, r.district].filter(Boolean).join(' ') || '-'}</div>
+                </div>
+              </div>`;
+              }).join('')}
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(panel);
+      lucide.createIcons();
+    }
+
+    function closeCustomerHistory() {
+      const panel = document.getElementById('customerHistoryPanel');
+      if (panel) panel.remove();
     }
 
     function openEditPanel(id) {
