@@ -1512,9 +1512,10 @@
     // ===== CRM & CDM 페이지 =====
     const CRM_CHANNELS = ['유튜브','홈페이지','전화','카카오톡','블로그','메일','폼','인스타그램','네이버 카페','문자','박람회','스마트스토어','네이버 톡톡','방문','기타'];
     const CRM_PRODUCTS = ['파고라','데크','폴딩도어','시스템셔터','슬라이딩도어','스크린','방충망','글라스폴딩','스마트픽스글라스','난간','클라비아','가구','짚스크린','유리난간','글라스트','스톤모어','기타'];
-    const CRM_GRADES = ['일반','가능성','확정','종료'];
-    const CRM_GRADE_COLORS = { '확정': 'bg-green-100 text-green-700 border-green-200', '가능성': 'bg-blue-100 text-blue-700 border-blue-200', '종료': 'bg-neutral-100 text-neutral-500 border-neutral-200', '일반': 'bg-amber-50 text-amber-700 border-amber-200' };
-    const CRM_GRADE_DOT = { '확정': 'bg-green-500', '가능성': 'bg-blue-500', '종료': 'bg-neutral-400', '일반': 'bg-amber-500' };
+    const CRM_GRADES = ['S','A','B','C','D'];
+    const CRM_GRADE_COLORS = { 'S': 'bg-purple-100 text-purple-700 border-purple-200', 'A': 'bg-green-100 text-green-700 border-green-200', 'B': 'bg-blue-100 text-blue-700 border-blue-200', 'C': 'bg-amber-50 text-amber-700 border-amber-200', 'D': 'bg-neutral-100 text-neutral-500 border-neutral-200' };
+    let editingCustomerId = null;
+    const CRM_GRADE_DOT = { 'S': 'bg-purple-500', 'A': 'bg-green-500', 'B': 'bg-blue-500', 'C': 'bg-amber-500', 'D': 'bg-neutral-400', '-': 'bg-neutral-300' };
 
     // ===== 대시보드 (별도 페이지) =====
     function getDashYearOptions() {
@@ -1942,7 +1943,8 @@
 
       // 파이프라인 카운트
       const counts = { '전체': customers.length };
-      CRM_GRADES.forEach(g => { counts[g] = customers.filter(c => c.grade === g).length; });
+      CRM_GRADES.forEach(g => { counts[g] = customers.filter(c => c.grade2 === g).length; });
+      counts['-'] = customers.filter(c => !CRM_GRADES.includes(c.grade2)).length;
 
       return `
         <div class="min-h-screen bg-white animate-fade-in">
@@ -2087,12 +2089,12 @@
             </div>
 
             <!-- 파이프라인 보드 -->
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
-              ${['전체', ...CRM_GRADES].map(g => `
+            <div class="grid grid-cols-3 md:grid-cols-7 gap-3 mb-8">
+              ${['전체', ...CRM_GRADES, '-'].map(g => `
               <button onclick="setCRMFilter('${g}')" class="p-4 rounded-xl border transition-all text-left ${crmFilter === g ? 'border-black bg-black text-white' : 'border-neutral-200 hover:border-black'}">
                 <div class="flex items-center gap-2 mb-2">
                   ${g !== '전체' ? `<div class="w-2 h-2 rounded-full ${crmFilter === g ? 'bg-white' : CRM_GRADE_DOT[g]}"></div>` : ''}
-                  <span class="text-[9px] font-black uppercase tracking-widest ${crmFilter === g ? 'text-white/70' : 'text-neutral-400'}">${g}</span>
+                  <span class="text-[9px] font-black uppercase tracking-widest ${crmFilter === g ? 'text-white/70' : 'text-neutral-400'}">${g === '-' ? '미지정' : g}</span>
                 </div>
                 <div class="text-2xl font-black">${counts[g] || 0}</div>
               </button>
@@ -2134,8 +2136,9 @@
                   </thead>
                   <tbody>
                     ${paged.length > 0 ? paged.map(c => {
-                      const displayGrade = (c.grade2 && c.grade2.trim()) || (c.grade && c.grade.trim()) || '-';
-                      const gradeClass = CRM_GRADE_COLORS[c.grade] || 'bg-neutral-100 text-neutral-600 border-neutral-200';
+                      const rawGrade = (c.grade2 && c.grade2.trim()) || '';
+                      const displayGrade = CRM_GRADES.includes(rawGrade) ? rawGrade : '-';
+                      const gradeClass = CRM_GRADE_COLORS[displayGrade] || 'bg-neutral-50 text-neutral-400 border-neutral-200';
                       return `
                     <tr class="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">
                       <td class="px-3 py-3 text-neutral-400 font-bold">${c.no || '-'}</td>
@@ -2150,7 +2153,7 @@
                       <td class="px-3 py-3 text-neutral-500 hidden md:table-cell">${[c.province, c.district].filter(Boolean).join(' ') || '-'}</td>
                       <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${c.assignedBranch ? 'bg-green-50 text-green-600' : 'text-neutral-400'}">${c.assignedBranch || '-'}</span></td>
                       <td class="px-3 py-3 text-center">
-                        <button onclick="editCRMGrade('${c.id}','${displayGrade}')" class="text-neutral-300 hover:text-black transition-colors" title="등급 변경">
+                        <button onclick="openEditPanel('${c.id}')" class="text-neutral-300 hover:text-black transition-colors" title="고객 정보 수정">
                           <i data-lucide="pencil" class="w-3 h-3"></i>
                         </button>
                       </td>
@@ -2183,7 +2186,8 @@
 
     function getFilteredCustomers() {
       let list = [...customers];
-      if (crmFilter !== '전체') list = list.filter(c => c.grade === crmFilter);
+      if (crmFilter === '-') list = list.filter(c => !CRM_GRADES.includes(c.grade2));
+      else if (crmFilter !== '전체') list = list.filter(c => c.grade2 === crmFilter);
       if (crmBrandFilter !== '전체') list = list.filter(c => c.brand === crmBrandFilter);
       if (crmSearch.trim()) {
         const q = crmSearch.trim().toLowerCase();
@@ -2578,13 +2582,114 @@
       XLSX.writeFile(wb, fileName);
     }
 
-    async function editCRMGrade(id, currentGrade) {
-      const newGrade = prompt(`등급 변경\n현재: ${currentGrade}\n\n새 등급을 입력하세요:`);
-      if (!newGrade || newGrade.trim() === '') return;
+    function openEditPanel(id) {
+      const c = customers.find(x => x.id === id);
+      if (!c) return;
+      editingCustomerId = id;
+      const currentGrade = CRM_GRADES.includes(c.grade2) ? c.grade2 : '';
+      const panel = document.createElement('div');
+      panel.id = 'editPanel';
+      panel.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm';
+      panel.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <div class="flex items-center justify-between p-5 border-b border-neutral-100">
+            <h3 class="text-sm font-black">고객 정보 수정</h3>
+            <button onclick="closeEditPanel()" class="text-neutral-400 hover:text-black transition-colors">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <div class="p-5 space-y-4">
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">등급</label>
+                <select id="editGrade" class="input-base w-full">
+                  <option value="">미지정</option>
+                  ${CRM_GRADES.map(g => `<option value="${g}" ${currentGrade === g ? 'selected' : ''}>${g}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">지사 배정</label>
+                <select id="editBranch" class="input-base w-full">
+                  <option value="">미배정</option>
+                  <option value="본사" ${c.assignedBranch === '본사' ? 'selected' : ''}>본사</option>
+                  <option value="현방" ${c.assignedBranch === '현방' ? 'selected' : ''}>현방</option>
+                  <option value="강남지사" ${c.assignedBranch === '강남지사' ? 'selected' : ''}>강남지사</option>
+                  <option value="강동지사" ${c.assignedBranch === '강동지사' ? 'selected' : ''}>강동지사</option>
+                  <option value="강북지사" ${c.assignedBranch === '강북지사' ? 'selected' : ''}>강북지사</option>
+                  <option value="부산지사" ${c.assignedBranch === '부산지사' ? 'selected' : ''}>부산지사</option>
+                  <option value="호남제주지사" ${c.assignedBranch === '호남제주지사' ? 'selected' : ''}>호남제주지사</option>
+                  <option value="중부지사" ${c.assignedBranch === '중부지사' ? 'selected' : ''}>중부지사</option>
+                </select>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">전화번호</label>
+                <input type="text" id="editPhone" class="input-base w-full" value="${c.phone || ''}" />
+              </div>
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">이메일</label>
+                <input type="text" id="editEmail" class="input-base w-full" value="${c.email || ''}" />
+              </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">도/광역시</label>
+                <input type="text" id="editProvince" class="input-base w-full" value="${c.province || ''}" />
+              </div>
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">시/군/구</label>
+                <input type="text" id="editDistrict" class="input-base w-full" value="${c.district || ''}" />
+              </div>
+            </div>
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">주소</label>
+              <input type="text" id="editAddress" class="input-base w-full" value="${c.address || ''}" />
+            </div>
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">상담내용</label>
+              <textarea id="editContent" class="input-base w-full h-24 resize-none">${c.content || ''}</textarea>
+            </div>
+          </div>
+          <div class="flex justify-end gap-2 p-5 border-t border-neutral-100">
+            <button onclick="closeEditPanel()" class="px-5 py-2.5 rounded-xl text-[10px] font-black border border-neutral-200 hover:border-black transition-all">취소</button>
+            <button onclick="saveEditPanel()" class="px-5 py-2.5 rounded-xl text-[10px] font-black bg-black text-white hover:bg-neutral-800 transition-all">저장</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(panel);
+      lucide.createIcons();
+    }
+
+    function closeEditPanel() {
+      const panel = document.getElementById('editPanel');
+      if (panel) panel.remove();
+      editingCustomerId = null;
+    }
+
+    async function saveEditPanel() {
+      if (!editingCustomerId) return;
       try {
         const { db, doc, updateDoc, serverTimestamp } = window.WORKS_DB;
-        await updateDoc(doc(db, 'crm_customers', id), { grade: newGrade.trim(), grade2: newGrade.trim(), updatedAt: serverTimestamp() });
-      } catch(e) { console.error('Grade update error:', e); alert('등급 변경 실패'); }
+        const grade = document.getElementById('editGrade').value;
+        const updates = {
+          grade2: grade,
+          grade: grade || '일반',
+          assignedBranch: document.getElementById('editBranch').value,
+          phone: document.getElementById('editPhone').value.trim(),
+          email: document.getElementById('editEmail').value.trim(),
+          province: document.getElementById('editProvince').value.trim(),
+          district: document.getElementById('editDistrict').value.trim(),
+          address: document.getElementById('editAddress').value.trim(),
+          content: document.getElementById('editContent').value.trim(),
+          updatedAt: serverTimestamp()
+        };
+        await updateDoc(doc(db, 'crm_customers', editingCustomerId), updates);
+        closeEditPanel();
+      } catch(e) {
+        console.error('Edit save error:', e);
+        alert('저장 실패: ' + e.message);
+      }
     }
 
     function showPreview() {
