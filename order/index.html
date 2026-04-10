@@ -224,7 +224,19 @@
     }
 
     // ===== 렌더링 =====
+    let _searchDebounce = null;
+    let _restoreFocus = null;
+
     function render() {
+      // 렌더 전 포커스 위치 저장
+      const activeEl = document.activeElement;
+      if (activeEl && activeEl.id) {
+        const cursorPos = activeEl.selectionStart;
+        _restoreFocus = { id: activeEl.id, cursor: cursorPos };
+      } else {
+        _restoreFocus = null;
+      }
+
       const app = document.getElementById('app');
       if (currentView === 'order_select') app.innerHTML = renderOrderSelect();
       else if (currentView === 'order') app.innerHTML = renderOrderForm();
@@ -236,6 +248,25 @@
       else app.innerHTML = renderHome();
       lucide.createIcons();
       bindEvents();
+
+      // 렌더 후 포커스 복원
+      if (_restoreFocus) {
+        const el = document.getElementById(_restoreFocus.id);
+        if (el) {
+          el.focus();
+          if (typeof el.selectionStart !== 'undefined' && _restoreFocus.cursor !== null) {
+            el.selectionStart = el.selectionEnd = _restoreFocus.cursor;
+          }
+        }
+        _restoreFocus = null;
+      }
+    }
+
+    function debouncedSearch(value) {
+      crmSearch = value;
+      crmPage = 0;
+      clearTimeout(_searchDebounce);
+      _searchDebounce = setTimeout(() => render(), 300);
     }
 
     function navigate(view) {
@@ -1323,6 +1354,182 @@
     const CRM_GRADE_COLORS = { '확정': 'bg-green-100 text-green-700 border-green-200', '가능성': 'bg-blue-100 text-blue-700 border-blue-200', '종료': 'bg-neutral-100 text-neutral-500 border-neutral-200', '일반': 'bg-amber-50 text-amber-700 border-amber-200' };
     const CRM_GRADE_DOT = { '확정': 'bg-green-500', '가능성': 'bg-blue-500', '종료': 'bg-neutral-400', '일반': 'bg-amber-500' };
 
+    function buildCRMStats() {
+      const now = new Date();
+      const thisMonth = (now.getMonth() + 1) + '월';
+      const thisYear = now.getFullYear() + '년';
+      const lastMonth = now.getMonth() === 0 ? '12월' : now.getMonth() + '월';
+      const lastMonthYear = now.getMonth() === 0 ? (now.getFullYear() - 1) + '년' : thisYear;
+
+      const thisMonthData = customers.filter(c => c.month === thisMonth && c.year === thisYear);
+      const lastMonthData = customers.filter(c => c.month === lastMonth && c.year === lastMonthYear);
+
+      // 채널별 유입
+      const channelCounts = {};
+      customers.forEach(c => { if (c.channel) channelCounts[c.channel] = (channelCounts[c.channel] || 0) + 1; });
+      const topChannels = Object.entries(channelCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const maxChannelCount = topChannels.length > 0 ? topChannels[0][1] : 1;
+
+      // 제품별 관심도
+      const productCounts = {};
+      customers.forEach(c => {
+        if (c.product) {
+          c.product.split(',').map(p => p.trim()).filter(Boolean).forEach(p => {
+            productCounts[p] = (productCounts[p] || 0) + 1;
+          });
+        }
+      });
+      const topProducts = Object.entries(productCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const maxProductCount = topProducts.length > 0 ? topProducts[0][1] : 1;
+
+      // 지역별
+      const regionCounts = {};
+      customers.forEach(c => { if (c.province) regionCounts[c.province] = (regionCounts[c.province] || 0) + 1; });
+      const topRegions = Object.entries(regionCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+      const maxRegionCount = topRegions.length > 0 ? topRegions[0][1] : 1;
+
+      // 브랜드별
+      const oskaCount = customers.filter(c => c.brand === '오스카').length;
+      const terraCount = customers.filter(c => c.brand === '테라까사').length;
+
+      // 이관율
+      const transferred = customers.filter(c => c.transfer === '이관').length;
+      const transferRate = customers.length > 0 ? Math.round(transferred / customers.length * 100) : 0;
+
+      // 월별 추이 (최근 6개월)
+      const monthlyTrend = [];
+      for (let i = 5; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const m = (d.getMonth() + 1) + '월';
+        const y = d.getFullYear() + '년';
+        const cnt = customers.filter(c => c.month === m && c.year === y).length;
+        monthlyTrend.push({ label: `${d.getMonth() + 1}월`, count: cnt });
+      }
+      const maxMonthly = Math.max(...monthlyTrend.map(m => m.count), 1);
+
+      // 전월 대비
+      const monthDiff = thisMonthData.length - lastMonthData.length;
+      const monthDiffPct = lastMonthData.length > 0 ? Math.round(monthDiff / lastMonthData.length * 100) : 0;
+
+      return { thisMonthData, lastMonthData, topChannels, maxChannelCount, topProducts, maxProductCount, topRegions, maxRegionCount, oskaCount, terraCount, transferred, transferRate, monthlyTrend, maxMonthly, monthDiff, monthDiffPct };
+    }
+
+    function renderCRMDashboard() {
+      if (customers.length === 0) return '';
+      const s = buildCRMStats();
+
+      return `
+        <div class="mb-10">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-sm font-black uppercase tracking-widest text-neutral-500">Dashboard</h2>
+            <button onclick="document.getElementById('crmDashboard').classList.toggle('hidden')" class="text-[9px] font-black text-neutral-400 hover:text-black transition-colors uppercase tracking-widest">접기/펼치기</button>
+          </div>
+          <div id="crmDashboard">
+            <!-- KPI 카드 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+              <div class="bg-black text-white rounded-2xl p-5">
+                <p class="text-[9px] font-black text-white/50 uppercase tracking-widest mb-1">전체 고객</p>
+                <p class="text-3xl font-black">${customers.length.toLocaleString()}</p>
+                <p class="text-[9px] text-white/40 mt-1">총 등록 건수</p>
+              </div>
+              <div class="border border-neutral-200 rounded-2xl p-5">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">이번 달</p>
+                <p class="text-3xl font-black">${s.thisMonthData.length}</p>
+                <p class="text-[9px] ${s.monthDiff >= 0 ? 'text-green-500' : 'text-red-500'} mt-1 font-bold">${s.monthDiff >= 0 ? '▲' : '▼'} ${Math.abs(s.monthDiff)}건 (${s.monthDiff >= 0 ? '+' : ''}${s.monthDiffPct}%)</p>
+              </div>
+              <div class="border border-neutral-200 rounded-2xl p-5">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">지사이관율</p>
+                <p class="text-3xl font-black">${s.transferRate}<span class="text-lg">%</span></p>
+                <p class="text-[9px] text-neutral-400 mt-1">${s.transferred}건 이관 완료</p>
+              </div>
+              <div class="border border-neutral-200 rounded-2xl p-5">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">브랜드 비율</p>
+                <div class="flex items-end gap-2 mt-1">
+                  <div class="text-center flex-1">
+                    <p class="text-lg font-black">${s.oskaCount}</p>
+                    <div class="h-1 bg-black rounded-full mt-1"></div>
+                    <p class="text-[8px] font-bold text-neutral-400 mt-1">오스카</p>
+                  </div>
+                  <div class="text-center flex-1">
+                    <p class="text-lg font-black text-orange-500">${s.terraCount}</p>
+                    <div class="h-1 bg-orange-400 rounded-full mt-1"></div>
+                    <p class="text-[8px] font-bold text-neutral-400 mt-1">테라까사</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 차트 영역 -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+              <!-- 월별 추이 -->
+              <div class="border border-neutral-200 rounded-2xl p-5">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-4">월별 문의 추이</p>
+                <div class="flex items-end gap-2 h-28">
+                  ${s.monthlyTrend.map(m => `
+                  <div class="flex-1 flex flex-col items-center justify-end h-full">
+                    <p class="text-[9px] font-black mb-1">${m.count}</p>
+                    <div class="w-full bg-black rounded-t" style="height: ${Math.max(m.count / s.maxMonthly * 100, 4)}%"></div>
+                    <p class="text-[8px] text-neutral-400 mt-1 font-bold">${m.label}</p>
+                  </div>
+                  `).join('')}
+                </div>
+              </div>
+
+              <!-- 채널별 유입 TOP 5 -->
+              <div class="border border-neutral-200 rounded-2xl p-5">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-4">유입 채널 TOP 5</p>
+                <div class="space-y-2.5">
+                  ${s.topChannels.map((ch, i) => `
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="text-[10px] font-bold">${ch[0]}</span>
+                      <span class="text-[9px] font-black text-neutral-400">${ch[1]}건</span>
+                    </div>
+                    <div class="h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                      <div class="h-full bg-black rounded-full" style="width: ${ch[1] / s.maxChannelCount * 100}%"></div>
+                    </div>
+                  </div>
+                  `).join('')}
+                </div>
+              </div>
+
+              <!-- 제품 관심도 TOP 5 -->
+              <div class="border border-neutral-200 rounded-2xl p-5">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-4">제품 관심도 TOP 5</p>
+                <div class="space-y-2.5">
+                  ${s.topProducts.map((p, i) => `
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <span class="text-[10px] font-bold">${p[0]}</span>
+                      <span class="text-[9px] font-black text-neutral-400">${p[1]}건</span>
+                    </div>
+                    <div class="h-1.5 bg-neutral-100 rounded-full overflow-hidden">
+                      <div class="h-full bg-blue-500 rounded-full" style="width: ${p[1] / s.maxProductCount * 100}%"></div>
+                    </div>
+                  </div>
+                  `).join('')}
+                </div>
+              </div>
+            </div>
+
+            <!-- 지역 분포 -->
+            <div class="border border-neutral-200 rounded-2xl p-5 mb-6">
+              <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-4">지역별 분포 TOP 5</p>
+              <div class="flex items-end gap-3 h-24">
+                ${s.topRegions.map(r => `
+                <div class="flex-1 flex flex-col items-center justify-end h-full">
+                  <p class="text-[10px] font-black mb-1">${r[1]}</p>
+                  <div class="w-full bg-neutral-800 rounded-t" style="height: ${Math.max(r[1] / s.maxRegionCount * 100, 6)}%"></div>
+                  <p class="text-[8px] text-neutral-400 mt-1.5 font-bold text-center leading-tight">${r[0]}</p>
+                </div>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     function renderCRM() {
       const filtered = getFilteredCustomers();
       const paged = filtered.slice(crmPage * CRM_PAGE_SIZE, (crmPage + 1) * CRM_PAGE_SIZE);
@@ -1355,6 +1562,9 @@
                 </button>
               </div>
             </div>
+
+            <!-- CRM 대시보드 -->
+            ${renderCRMDashboard()}
 
             <!-- 신규 고객 등록 폼 (토글) -->
             <div id="crmFormArea" class="hidden mb-8 border border-neutral-200 rounded-2xl p-6 animate-fade-in">
@@ -1478,7 +1688,7 @@
             <div class="flex flex-col md:flex-row gap-3 mb-6">
               <div class="flex-1 relative">
                 <i data-lucide="search" class="w-4 h-4 absolute left-4 top-1/2 -translate-y-1/2 text-neutral-300"></i>
-                <input type="text" id="crmSearchInput" class="input-base pl-10" placeholder="전화번호, 상담내용, 주소로 검색..." value="${crmSearch}" oninput="crmSearch=this.value; crmPage=0; render();" />
+                <input type="text" id="crmSearchInput" class="input-base pl-10" placeholder="전화번호, 상담내용, 주소로 검색..." value="${crmSearch}" oninput="debouncedSearch(this.value)" />
               </div>
               <select id="crmBrandSelect" class="input-base w-auto md:w-36" onchange="crmBrandFilter=this.value; crmPage=0; render();">
                 <option value="전체" ${crmBrandFilter === '전체' ? 'selected' : ''}>전체 브랜드</option>
