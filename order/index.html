@@ -125,7 +125,8 @@
     let crmSearch = '';
     let crmPage = 0;
     const CRM_PAGE_SIZE = 50;
-    let dashMode = '전체';       // '전체' or '2025년 3월' etc.
+    let dashYear = '전체';       // '전체' or '2025년' etc.
+    let dashMonth = '전체';      // '전체' or '3월' etc.
     let dashBrand = '전체';      // '전체','오스카','테라까사'
 
     // 지역 데이터 (시/도, 시/군/구)
@@ -1459,41 +1460,70 @@
     const CRM_GRADE_DOT = { '확정': 'bg-green-500', '가능성': 'bg-blue-500', '종료': 'bg-neutral-400', '일반': 'bg-amber-500' };
 
     // ===== 대시보드 (별도 페이지) =====
+    function getDashYearOptions() {
+      const years = new Set();
+      customers.forEach(c => { if (c.year) years.add(c.year); });
+      return Array.from(years).sort().reverse();
+    }
+
     function getDashMonthOptions() {
       const months = new Set();
-      customers.forEach(c => { if (c.year && c.month) months.add(c.year + ' ' + c.month); });
-      return Array.from(months).sort().reverse();
+      customers.forEach(c => {
+        if (c.month && (dashYear === '전체' || c.year === dashYear)) months.add(c.month);
+      });
+      // 월 정렬 (1월~12월)
+      return Array.from(months).sort((a, b) => parseInt(a) - parseInt(b));
     }
 
     function getDashData() {
       let data = [...customers];
       if (dashBrand !== '전체') data = data.filter(c => c.brand === dashBrand);
-      if (dashMode !== '전체') {
-        const [y, m] = dashMode.split(' ');
-        data = data.filter(c => c.year === y && c.month === m);
-      }
+      if (dashYear !== '전체') data = data.filter(c => c.year === dashYear);
+      if (dashMonth !== '전체') data = data.filter(c => c.month === dashMonth);
       return data;
     }
 
     function getDashPrevData() {
-      if (dashMode === '전체') return null;
-      const [yStr, mStr] = dashMode.split(' ');
-      const y = parseInt(yStr);
-      const m = parseInt(mStr);
+      // 전체 연도+전체 월이면 비교 없음
+      if (dashYear === '전체' && dashMonth === '전체') return null;
+      // 특정 연도+전체 월이면 전년도 비교
+      if (dashYear !== '전체' && dashMonth === '전체') {
+        const prevY = (parseInt(dashYear) - 1) + '년';
+        let data = customers.filter(c => c.year === prevY);
+        if (dashBrand !== '전체') data = data.filter(c => c.brand === dashBrand);
+        return data.length > 0 ? data : null;
+      }
+      // 특정 월이면 전월 비교
+      const m = parseInt(dashMonth);
+      const y = dashYear !== '전체' ? parseInt(dashYear) : null;
       const prevM = m === 1 ? 12 : m - 1;
-      const prevY = m === 1 ? y - 1 : y;
-      let data = customers.filter(c => c.year === prevY + '년' && c.month === prevM + '월');
+      const prevY = m === 1 && y ? y - 1 : y;
+      let data = customers.filter(c => {
+        const monthMatch = c.month === prevM + '월';
+        if (y) return monthMatch && c.year === prevY + '년';
+        return monthMatch;
+      });
       if (dashBrand !== '전체') data = data.filter(c => c.brand === dashBrand);
-      return data;
+      return data.length > 0 ? data : null;
     }
 
-    function setDashMode(mode) { dashMode = mode; render(); }
+    function getDashModeLabel() {
+      if (dashYear === '전체' && dashMonth === '전체') return '전체';
+      if (dashYear !== '전체' && dashMonth === '전체') return dashYear;
+      if (dashYear === '전체' && dashMonth !== '전체') return dashMonth;
+      return dashYear + ' ' + dashMonth;
+    }
+
+    function setDashYear(y) { dashYear = y; dashMonth = '전체'; render(); }
+    function setDashMonth(m) { dashMonth = m; render(); }
     function setDashBrand(brand) { dashBrand = brand; render(); }
 
     function renderDashboardPage() {
       const data = getDashData();
       const prevData = getDashPrevData();
+      const yearOptions = getDashYearOptions();
       const monthOptions = getDashMonthOptions();
+      const modeLabel = getDashModeLabel();
       const total = data.length;
 
       // 채널별
@@ -1549,25 +1579,39 @@
       const typeCounts = {};
       data.forEach(c => { const t = c.custType || '미지정'; typeCounts[t] = (typeCounts[t] || 0) + 1; });
 
-      // 월별 추이 (최근 12개월, 전체보기일 때만)
+      // 월별 추이 차트 (연도 선택 시 해당 연도 1~12월, 전체 시 최근 12개월)
       const now = new Date();
       const monthlyTrend = [];
-      for (let i = 11; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        const m = (d.getMonth() + 1) + '월';
-        const y = d.getFullYear() + '년';
-        let cnt = customers.filter(c => c.month === m && c.year === y);
-        if (dashBrand !== '전체') cnt = cnt.filter(c => c.brand === dashBrand);
-        monthlyTrend.push({ label: `${d.getFullYear().toString().slice(2)}.${d.getMonth() + 1}`, count: cnt.length });
+      if (dashYear !== '전체') {
+        // 선택된 연도의 1~12월
+        const yr = parseInt(dashYear);
+        for (let mi = 1; mi <= 12; mi++) {
+          const m = mi + '월';
+          const y = yr + '년';
+          let cnt = customers.filter(c => c.month === m && c.year === y);
+          if (dashBrand !== '전체') cnt = cnt.filter(c => c.brand === dashBrand);
+          monthlyTrend.push({ label: `${mi}월`, count: cnt.length });
+        }
+      } else {
+        // 최근 12개월
+        for (let i = 11; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const m = (d.getMonth() + 1) + '월';
+          const y = d.getFullYear() + '년';
+          let cnt = customers.filter(c => c.month === m && c.year === y);
+          if (dashBrand !== '전체') cnt = cnt.filter(c => c.brand === dashBrand);
+          monthlyTrend.push({ label: `${d.getFullYear().toString().slice(2)}.${d.getMonth() + 1}`, count: cnt.length });
+        }
       }
       const maxMonthly = Math.max(...monthlyTrend.map(m => m.count), 1);
 
-      // 전월 대비
+      // 전월/전년 대비
       let diffHtml = '';
       if (prevData !== null) {
         const diff = total - prevData.length;
         const pct = prevData.length > 0 ? Math.round(diff / prevData.length * 100) : 0;
-        diffHtml = `<p class="text-[9px] ${diff >= 0 ? 'text-green-500' : 'text-red-500'} mt-1 font-bold">${diff >= 0 ? '▲' : '▼'} ${Math.abs(diff)}건 (${diff >= 0 ? '+' : ''}${pct}%) 전월 대비</p>`;
+        const compLabel = (dashYear !== '전체' && dashMonth === '전체') ? '전년 대비' : '전월 대비';
+        diffHtml = `<p class="text-[9px] ${diff >= 0 ? 'text-green-500' : 'text-red-500'} mt-1 font-bold">${diff >= 0 ? '▲' : '▼'} ${Math.abs(diff)}건 (${diff >= 0 ? '+' : ''}${pct}%) ${compLabel}</p>`;
       }
 
       // 동의율
@@ -1592,10 +1636,15 @@
                   <option value="오스카" ${dashBrand === '오스카' ? 'selected' : ''}>오스카</option>
                   <option value="테라까사" ${dashBrand === '테라까사' ? 'selected' : ''}>테라까사</option>
                 </select>
-                <!-- 월간/전체 필터 -->
-                <select id="dashMonthSelect" class="input-base text-[11px] w-auto" onchange="setDashMode(this.value)">
-                  <option value="전체" ${dashMode === '전체' ? 'selected' : ''}>전체 보기</option>
-                  ${monthOptions.map(m => `<option value="${m}" ${dashMode === m ? 'selected' : ''}>${m}</option>`).join('')}
+                <!-- 연도 필터 -->
+                <select class="input-base text-[11px] w-auto" onchange="setDashYear(this.value)">
+                  <option value="전체" ${dashYear === '전체' ? 'selected' : ''}>전체 연도</option>
+                  ${yearOptions.map(y => `<option value="${y}" ${dashYear === y ? 'selected' : ''}>${y}</option>`).join('')}
+                </select>
+                <!-- 월 필터 -->
+                <select class="input-base text-[11px] w-auto" onchange="setDashMonth(this.value)">
+                  <option value="전체" ${dashMonth === '전체' ? 'selected' : ''}>전체 월</option>
+                  ${monthOptions.map(m => `<option value="${m}" ${dashMonth === m ? 'selected' : ''}>${m}</option>`).join('')}
                 </select>
                 <button onclick="navigate('crm')" class="h-10 px-4 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800 active:scale-[0.98] transition-all">
                   고객 목록
@@ -1606,7 +1655,7 @@
             <!-- KPI 카드 -->
             <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
               <div class="bg-black text-white rounded-2xl p-5">
-                <p class="text-[9px] font-black text-white/50 uppercase tracking-widest mb-1">${dashMode === '전체' ? '전체 고객' : dashMode}</p>
+                <p class="text-[9px] font-black text-white/50 uppercase tracking-widest mb-1">${modeLabel === '전체' ? '전체 고객' : modeLabel}</p>
                 <p class="text-3xl font-black">${total.toLocaleString()}</p>
                 ${diffHtml || `<p class="text-[9px] text-white/40 mt-1">총 문의 건수</p>`}
               </div>
@@ -1632,10 +1681,10 @@
               </div>
             </div>
 
-            ${dashMode === '전체' ? `
-            <!-- 월별 추이 (전체보기일 때만) -->
+            ${dashMonth === '전체' ? `
+            <!-- 월별 추이 (전체 월 보기일 때) -->
             <div class="border border-neutral-200 rounded-2xl p-6 mb-6">
-              <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-5">월별 문의 추이 (최근 12개월)</p>
+              <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-5">월별 문의 추이 ${dashYear !== '전체' ? `(${dashYear})` : '(최근 12개월)'}</p>
               <div class="flex items-end gap-1.5 h-36">
                 ${monthlyTrend.map(m => `
                 <div class="flex-1 flex flex-col items-center justify-end h-full">
