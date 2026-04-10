@@ -448,6 +448,9 @@
 
     async function submitRegistration(e) {
       e.preventDefault();
+      const userId = document.getElementById('regUserId').value.trim();
+      const password = document.getElementById('regPassword').value;
+      const passwordConfirm = document.getElementById('regPasswordConfirm').value;
       const companyName = document.getElementById('regCompanyName').value.trim();
       const companyType = document.getElementById('regCompanyType').value;
       const ownerName = document.getElementById('regOwnerName').value.trim();
@@ -457,6 +460,26 @@
       const bizNumber = document.getElementById('regBizNumber').value.trim();
       const address = document.getElementById('regAddress').value.trim();
       const memo = document.getElementById('regMemo').value.trim();
+
+      // ID 검증: 영문으로 시작, 영문+숫자만
+      if (!userId || !/^[a-zA-Z][a-zA-Z0-9]*$/.test(userId)) {
+        alert('아이디는 영문으로 시작하며, 영문과 숫자만 사용 가능합니다.');
+        return;
+      }
+      if (userId.length < 3) {
+        alert('아이디는 3자 이상 입력해주세요.');
+        return;
+      }
+
+      // 비밀번호 검증
+      if (!password || password.length < 4) {
+        alert('비밀번호는 4자 이상 입력해주세요.');
+        return;
+      }
+      if (password !== passwordConfirm) {
+        alert('비밀번호가 일치하지 않습니다. 다시 확인해주세요.');
+        return;
+      }
 
       if (!companyName || !companyType || !ownerName || !managerName || !phone || !bizNumber) {
         alert('필수 항목을 모두 입력해주세요.');
@@ -473,9 +496,9 @@
       try {
         const { db, collection, addDoc, serverTimestamp } = window.OSKA_DB;
         await addDoc(collection(db, 'registration_requests'), {
-          companyName, companyType, ownerName, managerName,
+          userId, password, companyName, companyType, ownerName, managerName,
           phone, email, bizNumber, address, memo,
-          status: 'pending',    // pending → approved / rejected
+          status: 'pending',
           createdAt: serverTimestamp()
         });
         setState({ currentView: 'register_complete' });
@@ -973,19 +996,18 @@
       const req = (state._regRequests || []).find(r => r.id === reqId);
       if (!req) return;
 
-      // 초기 비밀번호: 업체명 + 사업자등록번호 뒤5자리
-      const bizDigits = (req.bizNumber || '').replace(/[^0-9]/g, '');
-      const last5 = bizDigits.slice(-5);
-      const initialPassword = req.companyName + last5;
+      // 사용자가 지정한 ID와 비밀번호 사용
+      const accountId = req.companyName;  // 로그인 드롭다운에 표시될 이름
+      const accountPassword = req.password || (req.companyName + (req.bizNumber || '').replace(/[^0-9]/g, '').slice(-5));
 
       // 계정 추가
-      ACCOUNTS[req.companyName] = initialPassword;
-      ACCOUNT_TYPES[req.companyName] = req.companyType || 'branch';
-      if (req.managerName) ACCOUNT_MANAGERS[req.companyName] = req.managerName;
+      ACCOUNTS[accountId] = accountPassword;
+      ACCOUNT_TYPES[accountId] = req.companyType || 'branch';
+      if (req.managerName) ACCOUNT_MANAGERS[accountId] = req.managerName;
 
       // 순서에 추가
-      if (!ACCOUNT_SETTINGS.order.includes(req.companyName)) {
-        ACCOUNT_SETTINGS.order.push(req.companyName);
+      if (!ACCOUNT_SETTINGS.order.includes(accountId)) {
+        ACCOUNT_SETTINGS.order.push(accountId);
       }
 
       try {
@@ -1000,13 +1022,12 @@
 
         // 요청 상태 업데이트
         const reqRef = doc(db, 'registration_requests', reqId);
-        await updateDoc(reqRef, { status: 'approved', approvedAt: new Date().toISOString(), initialPassword });
+        await updateDoc(reqRef, { status: 'approved', approvedAt: new Date().toISOString() });
 
         // 로컬 상태 업데이트
         req.status = 'approved';
-        req.initialPassword = initialPassword;
 
-        showAdminMsg(`"${req.companyName}" 승인 완료! 초기 비밀번호: ${initialPassword}`, 'success');
+        showAdminMsg(`"${req.companyName}" (ID: ${req.userId || accountId}) 승인 완료!`, 'success');
         render();
       } catch(e) {
         console.error('Approve error:', e);
