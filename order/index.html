@@ -2031,7 +2031,10 @@
                 </div>
                 <div>
                   <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">등급</label>
-                  <input type="text" id="crmGrade2" class="input-base mt-1" placeholder="등급 입력" />
+                  <select id="crmGrade2" class="input-base mt-1">
+                    <option value="">미지정</option>
+                    ${CRM_GRADES.map(g => `<option value="${g}">${g}</option>`).join('')}
+                  </select>
                 </div>
               </div>
               <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
@@ -2590,16 +2593,66 @@
       const panel = document.createElement('div');
       panel.id = 'editPanel';
       panel.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm';
+      const currentProducts = (c.product || '').split(',').map(p => p.trim()).filter(Boolean);
+      const branchOptions = ['본사','현방','강남지사','강동지사','강북지사','부산지사','호남제주지사','중부지사'];
       panel.innerHTML = `
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between p-5 border-b border-neutral-100">
-            <h3 class="text-sm font-black">고객 정보 수정</h3>
+            <div>
+              <h3 class="text-sm font-black">고객 정보 수정</h3>
+              <p class="text-[9px] text-neutral-400 mt-0.5">No. ${c.no || '-'}</p>
+            </div>
             <button onclick="closeEditPanel()" class="text-neutral-400 hover:text-black transition-colors">
               <i data-lucide="x" class="w-4 h-4"></i>
             </button>
           </div>
           <div class="p-5 space-y-4">
-            <div class="grid grid-cols-2 gap-4">
+            <!-- 1행: 브랜드 / 날짜 / 채널 / 동의 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">브랜드</label>
+                <select id="editBrand" class="input-base w-full">
+                  <option value="오스카" ${c.brand === '오스카' ? 'selected' : ''}>오스카</option>
+                  <option value="테라까사" ${c.brand === '테라까사' ? 'selected' : ''}>테라까사</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">날짜</label>
+                <input type="date" id="editDate" class="input-base w-full" value="${c.date || ''}" />
+              </div>
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">문의채널</label>
+                <select id="editChannel" class="input-base w-full">
+                  <option value="">선택</option>
+                  ${CRM_CHANNELS.map(ch => `<option value="${ch}" ${c.channel === ch ? 'selected' : ''}>${ch}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">개인정보 동의</label>
+                <select id="editConsent" class="input-base w-full">
+                  <option value="동의" ${c.consent === '동의' ? 'selected' : ''}>동의</option>
+                  <option value="비동의" ${c.consent === '비동의' ? 'selected' : ''}>비동의</option>
+                </select>
+              </div>
+            </div>
+            <!-- 2행: 전화 / 이메일 / 유형 / 등급 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">전화번호</label>
+                <input type="tel" id="editPhone" class="input-base w-full" value="${c.phone || ''}" />
+              </div>
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">이메일</label>
+                <input type="email" id="editEmail" class="input-base w-full" value="${c.email || ''}" />
+              </div>
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">고객 유형</label>
+                <select id="editCustType" class="input-base w-full">
+                  <option value="개인" ${c.custType === '개인' ? 'selected' : ''}>개인</option>
+                  <option value="업체" ${c.custType === '업체' ? 'selected' : ''}>업체</option>
+                  <option value="관공서" ${c.custType === '관공서' ? 'selected' : ''}>관공서</option>
+                </select>
+              </div>
               <div>
                 <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">등급</label>
                 <select id="editGrade" class="input-base w-full">
@@ -2607,45 +2660,48 @@
                   ${CRM_GRADES.map(g => `<option value="${g}" ${currentGrade === g ? 'selected' : ''}>${g}</option>`).join('')}
                 </select>
               </div>
+            </div>
+            <!-- 3행: 지역 / 주소 / 지사배정 -->
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">도/광역시</label>
+                <select id="editProvince" class="input-base w-full" onchange="updateEditDistrict()">
+                  <option value="">선택</option>
+                  ${Object.keys(REGIONS_DATA).map(p => `<option value="${p}" ${c.province === p ? 'selected' : ''}>${p}</option>`).join('')}
+                  <option value="해외" ${c.province === '해외' ? 'selected' : ''}>해외</option>
+                </select>
+              </div>
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">시/군/구</label>
+                <select id="editDistrict" class="input-base w-full">
+                  <option value="">선택</option>
+                  ${(REGIONS_DATA[c.province] || []).map(d => `<option value="${d}" ${c.district === d ? 'selected' : ''}>${d}</option>`).join('')}
+                </select>
+              </div>
+              <div>
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">주소</label>
+                <input type="text" id="editAddress" class="input-base w-full" value="${c.address || ''}" />
+              </div>
               <div>
                 <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">지사 배정</label>
                 <select id="editBranch" class="input-base w-full">
                   <option value="">미배정</option>
-                  <option value="본사" ${c.assignedBranch === '본사' ? 'selected' : ''}>본사</option>
-                  <option value="현방" ${c.assignedBranch === '현방' ? 'selected' : ''}>현방</option>
-                  <option value="강남지사" ${c.assignedBranch === '강남지사' ? 'selected' : ''}>강남지사</option>
-                  <option value="강동지사" ${c.assignedBranch === '강동지사' ? 'selected' : ''}>강동지사</option>
-                  <option value="강북지사" ${c.assignedBranch === '강북지사' ? 'selected' : ''}>강북지사</option>
-                  <option value="부산지사" ${c.assignedBranch === '부산지사' ? 'selected' : ''}>부산지사</option>
-                  <option value="호남제주지사" ${c.assignedBranch === '호남제주지사' ? 'selected' : ''}>호남제주지사</option>
-                  <option value="중부지사" ${c.assignedBranch === '중부지사' ? 'selected' : ''}>중부지사</option>
+                  ${branchOptions.map(b => `<option value="${b}" ${c.assignedBranch === b ? 'selected' : ''}>${b}</option>`).join('')}
                 </select>
               </div>
             </div>
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">전화번호</label>
-                <input type="text" id="editPhone" class="input-base w-full" value="${c.phone || ''}" />
-              </div>
-              <div>
-                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">이메일</label>
-                <input type="text" id="editEmail" class="input-base w-full" value="${c.email || ''}" />
-              </div>
-            </div>
-            <div class="grid grid-cols-2 gap-4">
-              <div>
-                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">도/광역시</label>
-                <input type="text" id="editProvince" class="input-base w-full" value="${c.province || ''}" />
-              </div>
-              <div>
-                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">시/군/구</label>
-                <input type="text" id="editDistrict" class="input-base w-full" value="${c.district || ''}" />
-              </div>
-            </div>
+            <!-- 제품군 -->
             <div>
-              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">주소</label>
-              <input type="text" id="editAddress" class="input-base w-full" value="${c.address || ''}" />
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-2">제품군</label>
+              <div class="flex flex-wrap gap-1.5">
+                ${CRM_PRODUCTS.map(p => `
+                <label class="flex items-center gap-1 px-2.5 py-1.5 border border-neutral-200 rounded-lg cursor-pointer text-[10px] font-bold has-[:checked]:bg-black has-[:checked]:text-white has-[:checked]:border-black transition-all">
+                  <input type="checkbox" name="editProductCheck" value="${p}" ${currentProducts.includes(p) ? 'checked' : ''} class="w-2.5 h-2.5 accent-black" />
+                  ${p}
+                </label>`).join('')}
+              </div>
             </div>
+            <!-- 상담내용 -->
             <div>
               <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">상담내용</label>
               <textarea id="editContent" class="input-base w-full h-24 resize-none">${c.content || ''}</textarea>
@@ -2672,15 +2728,29 @@
       try {
         const { db, doc, updateDoc, serverTimestamp } = window.WORKS_DB;
         const grade = document.getElementById('editGrade').value;
+        const dateVal = document.getElementById('editDate').value;
+        const dateObj = dateVal ? new Date(dateVal) : null;
+        const yearStr = dateObj ? dateObj.getFullYear() + '년' : '';
+        const monthStr = dateObj ? (dateObj.getMonth() + 1) + '월' : '';
+        const checkedProducts = document.querySelectorAll('input[name="editProductCheck"]:checked');
+        const productStr = Array.from(checkedProducts).map(cb => cb.value).join(', ');
         const updates = {
-          grade2: grade,
-          grade: grade || '일반',
-          assignedBranch: document.getElementById('editBranch').value,
+          brand: document.getElementById('editBrand').value,
+          date: dateVal,
+          year: yearStr,
+          month: monthStr,
+          channel: document.getElementById('editChannel').value,
+          consent: document.getElementById('editConsent').value,
           phone: document.getElementById('editPhone').value.trim(),
           email: document.getElementById('editEmail').value.trim(),
-          province: document.getElementById('editProvince').value.trim(),
-          district: document.getElementById('editDistrict').value.trim(),
+          custType: document.getElementById('editCustType').value,
+          grade2: grade,
+          grade: grade || '일반',
+          province: document.getElementById('editProvince').value,
+          district: document.getElementById('editDistrict').value,
           address: document.getElementById('editAddress').value.trim(),
+          assignedBranch: document.getElementById('editBranch').value,
+          product: productStr,
           content: document.getElementById('editContent').value.trim(),
           updatedAt: serverTimestamp()
         };
@@ -2689,6 +2759,17 @@
       } catch(e) {
         console.error('Edit save error:', e);
         alert('저장 실패: ' + e.message);
+      }
+    }
+
+    function updateEditDistrict() {
+      const prov = document.getElementById('editProvince').value;
+      const distSelect = document.getElementById('editDistrict');
+      distSelect.innerHTML = '<option value="">선택</option>';
+      if (prov && REGIONS_DATA[prov]) {
+        REGIONS_DATA[prov].forEach(d => {
+          distSelect.innerHTML += `<option value="${d}">${d}</option>`;
+        });
       }
     }
 
