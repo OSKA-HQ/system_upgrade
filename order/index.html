@@ -10,6 +10,7 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 
   <!-- Firebase SDK -->
   <script type="module">
@@ -1345,7 +1346,10 @@
                 ${customers.length === 0 ? `
                 <button onclick="importCRMData()" id="crmImportBtn" class="h-10 px-5 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 active:scale-[0.98] transition-all flex items-center gap-2">
                   <i data-lucide="upload" class="w-3.5 h-3.5"></i> 데이터 임포트
-                </button>` : ''}
+                </button>` : `
+                <button onclick="downloadCRMExcel()" class="h-10 px-5 bg-white border border-neutral-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:border-black active:scale-[0.98] transition-all flex items-center gap-2">
+                  <i data-lucide="download" class="w-3.5 h-3.5"></i> 엑셀 다운로드
+                </button>`}
                 <button onclick="toggleCRMForm()" class="h-10 px-5 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800 active:scale-[0.98] transition-all flex items-center gap-2">
                   <i data-lucide="plus" class="w-3.5 h-3.5"></i> 신규 등록
                 </button>
@@ -1397,13 +1401,6 @@
                   <input type="email" id="crmEmail" class="input-base mt-1" placeholder="email@example.com" />
                 </div>
                 <div>
-                  <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">제품군</label>
-                  <select id="crmProduct" class="input-base mt-1">
-                    <option value="">선택</option>
-                    ${CRM_PRODUCTS.map(p => `<option value="${p}">${p}</option>`).join('')}
-                  </select>
-                </div>
-                <div>
                   <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">구분 (개인/업체)</label>
                   <select id="crmCustType" class="input-base mt-1">
                     <option value="개인">개인</option>
@@ -1411,18 +1408,12 @@
                     <option value="관공서">관공서</option>
                   </select>
                 </div>
-              </div>
-              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">등급</label>
-                  <select id="crmGrade" class="input-base mt-1">
-                    ${CRM_GRADES.map(g => `<option value="${g}">${g}</option>`).join('')}
-                  </select>
+                  <input type="text" id="crmGrade2" class="input-base mt-1" placeholder="등급 입력" />
                 </div>
-                <div>
-                  <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">등급2</label>
-                  <input type="text" id="crmGrade2" class="input-base mt-1" placeholder="세부 등급" />
-                </div>
+              </div>
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">도/광역시</label>
                   <select id="crmProvince" class="input-base mt-1" onchange="updateCRMDistrict()">
@@ -1436,19 +1427,29 @@
                     <option value="">선택</option>
                   </select>
                 </div>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                 <div>
                   <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">주소</label>
                   <input type="text" id="crmAddress" class="input-base mt-1" placeholder="상세 주소" />
                 </div>
                 <div>
-                  <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">시공팀 이관 여부</label>
+                  <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">지사이관 여부</label>
                   <select id="crmTransfer" class="input-base mt-1">
                     <option value="">선택</option>
                     <option value="이관">이관</option>
                     <option value="미이관">미이관</option>
                   </select>
+                </div>
+              </div>
+              <!-- 제품군 (체크박스 복수 선택) -->
+              <div class="mb-4">
+                <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1 mb-2 block">제품군 (복수 선택 가능)</label>
+                <div class="flex flex-wrap gap-2">
+                  ${CRM_PRODUCTS.map(p => `
+                  <label class="flex items-center gap-1.5 px-3 py-2 border border-neutral-200 rounded-lg hover:border-black transition-all cursor-pointer has-[:checked]:bg-black has-[:checked]:text-white has-[:checked]:border-black">
+                    <input type="checkbox" name="crmProductCheck" value="${p}" class="w-3 h-3 accent-black" />
+                    <span class="text-[11px] font-bold">${p}</span>
+                  </label>
+                  `).join('')}
                 </div>
               </div>
               <div class="mb-4">
@@ -1507,7 +1508,8 @@
                   </thead>
                   <tbody>
                     ${paged.length > 0 ? paged.map(c => {
-                      const gradeClass = CRM_GRADE_COLORS[c.grade] || CRM_GRADE_COLORS['일반'];
+                      const displayGrade = c.grade2 || c.grade || '-';
+                      const gradeClass = CRM_GRADE_COLORS[c.grade] || 'bg-neutral-100 text-neutral-600 border-neutral-200';
                       return `
                     <tr class="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">
                       <td class="px-3 py-3 text-neutral-400 font-bold">${c.no || '-'}</td>
@@ -1517,11 +1519,11 @@
                       <td class="px-3 py-3 font-bold">${c.phone || '-'}</td>
                       <td class="px-3 py-3 font-bold">${c.product || '-'}</td>
                       <td class="px-3 py-3 font-bold">${c.custType || '-'}</td>
-                      <td class="px-3 py-3"><span class="text-[9px] font-black px-2 py-0.5 rounded border ${gradeClass}">${c.grade || '-'}</span></td>
+                      <td class="px-3 py-3"><span class="text-[9px] font-black px-2 py-0.5 rounded border ${gradeClass}">${displayGrade}</span></td>
                       <td class="px-3 py-3 text-neutral-500 max-w-[200px] truncate hidden md:table-cell">${c.content || '-'}</td>
                       <td class="px-3 py-3 text-neutral-500 hidden md:table-cell">${[c.province, c.district].filter(Boolean).join(' ') || '-'}</td>
                       <td class="px-3 py-3 text-center">
-                        <button onclick="editCRMGrade('${c.id}','${c.grade}')" class="text-neutral-300 hover:text-black transition-colors" title="등급 변경">
+                        <button onclick="editCRMGrade('${c.id}','${displayGrade}')" class="text-neutral-300 hover:text-black transition-colors" title="등급 변경">
                           <i data-lucide="pencil" class="w-3 h-3"></i>
                         </button>
                       </td>
@@ -1607,9 +1609,9 @@
       const consent = document.getElementById('crmConsent').value;
       const phone = document.getElementById('crmPhone').value.trim();
       const email = document.getElementById('crmEmail').value.trim();
-      const product = document.getElementById('crmProduct').value;
+      const checkedProducts = document.querySelectorAll('input[name="crmProductCheck"]:checked');
+      const product = Array.from(checkedProducts).map(cb => cb.value).join(', ');
       const custType = document.getElementById('crmCustType').value;
-      const grade = document.getElementById('crmGrade').value;
       const grade2 = document.getElementById('crmGrade2').value.trim();
       const province = document.getElementById('crmProvince').value;
       const district = document.getElementById('crmDistrict').value;
@@ -1631,17 +1633,18 @@
           no: newNo,
           brand, date, year: yearStr, month: monthStr,
           channel, consent, phone, email,
-          product, custType, grade, grade2,
+          product, custType, grade: grade2, grade2,
           province, district, address, transfer, content,
           createdAt: serverTimestamp()
         });
         alert('고객 정보가 저장되었습니다.');
         toggleCRMForm();
         // 폼 초기화
-        ['crmChannel','crmPhone','crmEmail','crmProduct','crmGrade2','crmProvince','crmDistrict','crmAddress','crmTransfer','crmContent'].forEach(id => {
+        ['crmChannel','crmPhone','crmEmail','crmGrade2','crmProvince','crmDistrict','crmAddress','crmTransfer','crmContent'].forEach(id => {
           const el = document.getElementById(id);
           if (el) el.tagName === 'SELECT' ? el.selectedIndex = 0 : el.value = '';
         });
+        document.querySelectorAll('input[name="crmProductCheck"]').forEach(cb => cb.checked = false);
       } catch(e) {
         console.error('CRM save error:', e);
         alert('저장 실패: ' + e.message);
@@ -1684,12 +1687,42 @@
       }
     }
 
+    function downloadCRMExcel() {
+      const filtered = getFilteredCustomers();
+      const rows = filtered.map(c => ({
+        'No': c.no || '',
+        '구분': c.brand || '',
+        '년': c.year || '',
+        '월': c.month || '',
+        '날짜': c.date || '',
+        '문의채널': c.channel || '',
+        '개인정보 동의': c.consent || '',
+        '전화번호': c.phone || '',
+        '이메일': c.email || '',
+        '제품군': c.product || '',
+        '구분(개인/업체)': c.custType || '',
+        '등급': c.grade2 || c.grade || '',
+        '상담내용': c.content || '',
+        '도/광역시': c.province || '',
+        '시/군': c.district || '',
+        '주소': c.address || '',
+        '지사이관 여부': c.transfer || '',
+      }));
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const colWidths = [6,8,8,6,12,10,10,14,20,10,10,8,40,10,10,25,10];
+      ws['!cols'] = colWidths.map(w => ({ wch: w }));
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'CRM Data');
+      const fileName = `CRM_${crmFilter === '전체' ? '전체' : crmFilter}_${new Date().toISOString().slice(0,10)}.xlsx`;
+      XLSX.writeFile(wb, fileName);
+    }
+
     async function editCRMGrade(id, currentGrade) {
-      const newGrade = prompt(`등급 변경\n현재: ${currentGrade}\n\n새 등급 입력 (일반, 가능성, 확정, 종료):`);
-      if (!newGrade || !CRM_GRADES.includes(newGrade)) { if (newGrade) alert('올바른 등급을 입력하세요: 일반, 가능성, 확정, 종료'); return; }
+      const newGrade = prompt(`등급 변경\n현재: ${currentGrade}\n\n새 등급을 입력하세요:`);
+      if (!newGrade || newGrade.trim() === '') return;
       try {
         const { db, doc, updateDoc, serverTimestamp } = window.WORKS_DB;
-        await updateDoc(doc(db, 'crm_customers', id), { grade: newGrade, updatedAt: serverTimestamp() });
+        await updateDoc(doc(db, 'crm_customers', id), { grade: newGrade.trim(), grade2: newGrade.trim(), updatedAt: serverTimestamp() });
       } catch(e) { console.error('Grade update error:', e); alert('등급 변경 실패'); }
     }
 
