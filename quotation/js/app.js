@@ -300,8 +300,13 @@ function handleProdChange(sel) {
     const optionCell = tr.querySelector('.option-cell');
     const colorSelect = tr.querySelector('.color-select');
     colorSelect.disabled = false; colorSelect.value = '';
-    tr.querySelector('.price').value = '';
-    tr.querySelector('.price').dataset.basePrice = 0;
+    const priceInput = tr.querySelector('.price');
+    priceInput.value = '';
+    priceInput.dataset.basePrice = 0;
+    priceInput.dataset.manualOverride = '';
+    // 잠금 아이콘 제거
+    const lockIcon = priceInput.parentElement.querySelector('.lock-icon');
+    if (lockIcon) lockIcon.remove();
     const customInput = sel.nextElementSibling;
     if (prodName === 'custom' || prodName === '직접 입력') { sel.classList.add('hidden'); customInput.classList.remove('hidden'); customInput.focus(); return; }
 
@@ -383,6 +388,15 @@ function calcRow(el) {
     const tr = el.closest('tr');
     const prodName = tr.querySelector('td:nth-child(2) select').value;
     const priceInput = tr.querySelector('.price');
+
+    // [특수견적] 수동 단가 고정 모드: 사용자가 직접 입력한 단가를 유지
+    if (priceInput.dataset.manualOverride === "true") {
+        const manualPrice = parseNum(priceInput.value);
+        tr.querySelector('.sum').textContent = formatNumber(manualPrice * parseNum(tr.querySelector('.qty').value));
+        syncDirectCosts(); calcTotal(); saveData();
+        return;
+    }
+
     let base = parseFloat(priceInput.dataset.basePrice) || 0;
 
     if (prodName === "Solar Panel") base = 60000;
@@ -407,7 +421,29 @@ function calcRow(el) {
     syncDirectCosts(); calcTotal(); saveData();
 }
 
-function handleManualPrice(inp) { inp.dataset.basePrice = parseNum(inp.value); calcRow(inp); }
+function handleManualPrice(inp) {
+    inp.dataset.basePrice = parseNum(inp.value);
+    inp.dataset.manualOverride = "true";
+    // 수동 입력 시 잠금 아이콘 표시
+    let lockIcon = inp.parentElement.querySelector('.lock-icon');
+    if (!lockIcon) {
+        lockIcon = document.createElement('span');
+        lockIcon.className = 'lock-icon';
+        lockIcon.title = '수동 단가 (클릭시 자동 계산으로 복원)';
+        lockIcon.style.cssText = 'position:absolute;top:2px;right:4px;cursor:pointer;font-size:10px;color:#2563eb;z-index:1;';
+        lockIcon.textContent = '🔒';
+        lockIcon.onclick = function(e) {
+            e.stopPropagation();
+            inp.dataset.manualOverride = "";
+            inp.dataset.basePrice = 0;
+            lockIcon.remove();
+            calcRow(inp);
+        };
+        inp.parentElement.style.position = 'relative';
+        inp.parentElement.appendChild(lockIcon);
+    }
+    calcRow(inp);
+}
 
 function addConsRow(item = {}) {
     const tbody = document.getElementById('cons-tbody');
