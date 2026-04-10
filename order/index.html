@@ -360,25 +360,6 @@
                   <p class="text-[9px] text-neutral-300">등록된 고객</p>
                 </div>
               </div>
-              <!-- Dashboard (본사 전용) -->
-              <div class="bg-gradient-to-br from-neutral-900 to-neutral-700 text-white rounded-2xl p-6 hover:from-neutral-800 hover:to-neutral-600 transition-all cursor-pointer group md:col-span-2" onclick="navigate('dashboard')">
-                <div class="flex items-center justify-between mb-4">
-                  <i data-lucide="bar-chart-3" class="w-6 h-6 text-white/50 group-hover:text-white transition-colors"></i>
-                  <span class="text-[9px] bg-white/10 text-white/70 px-2 py-1 rounded font-black tracking-widest">분석</span>
-                </div>
-                <h3 class="text-lg font-black uppercase tracking-wider mb-2">CRM Dashboard</h3>
-                <p class="text-[11px] text-white/60 mb-4">고객 데이터 분석 · 월간/전체 리포트</p>
-                <div class="border-t border-white/10 pt-4 flex gap-6">
-                  <div>
-                    <p class="text-[10px] text-white/80 font-black">${customers.length}건</p>
-                    <p class="text-[9px] text-white/40">총 데이터</p>
-                  </div>
-                  <div>
-                    <p class="text-[10px] text-white/80 font-black">${customers.filter(c => c.transfer === '이관').length}건</p>
-                    <p class="text-[9px] text-white/40">지사이관</p>
-                  </div>
-                </div>
-              </div>
               ` : ''}
             </div>
 
@@ -1007,7 +988,8 @@
                 ? myOrders.map(o => renderOrderListItem(o, isHQ)).join('')
                 : `<div class="text-center py-16">
                     <i data-lucide="inbox" class="w-10 h-10 text-neutral-200 mx-auto mb-4"></i>
-                    <p class="text-sm text-neutral-300 font-bold">발주 내역이 없습니다</p>
+                    <p class="text-sm text-neutral-300 font-bold mb-4">발주 내역이 없습니다</p>
+                    ${currentType === 'hq' ? `<button onclick="seedTestOrders()" class="h-10 px-5 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 active:scale-[0.98] transition-all">테스트 데이터 생성</button>` : ''}
                   </div>`
               }
             </div>
@@ -2057,6 +2039,147 @@
       } catch(e) {
         console.error('CRM save error:', e);
         alert('저장 실패: ' + e.message);
+      }
+    }
+
+    // 테스트용 발주 데이터 시드
+    async function seedTestOrders() {
+      if (!confirm('테스트용 발주 데이터 8건을 생성합니다. 진행하시겠습니까?')) return;
+      const { db, collection, addDoc, serverTimestamp } = window.WORKS_DB;
+      const testOrders = [
+        {
+          orderType: 'product', orderNumber: 'ORD-2026-0401-001', branch: '강남지사', manager: '백원준 이사',
+          siteName: '삼성동 주택 파고라', deliveryDate: '2026-04-20', orderDate: '2026-04-01',
+          products: [
+            { product: '파고라 PG-400', spec: '4000x5000 화이트', qty: 1, unit: 'EA', price: 8500000, subtotal: 8500000 },
+            { product: '파고라 전동모터', spec: 'AC220V', qty: 1, unit: 'EA', price: 450000, subtotal: 450000 }
+          ],
+          total: 8950000, memo: '납품 전 현장 확인 요청', status: '제작중',
+          productionStages: {
+            '접수': { status: 'completed', completedDate: '2026-04-01', comment: '접수 완료' },
+            '설계확인': { status: 'completed', completedDate: '2026-04-03', comment: '설계 확인 완료' },
+            '자재준비': { status: 'completed', completedDate: '2026-04-05', comment: '자재 입고' },
+            '제작중': { status: 'in-progress', comment: '프레임 조립 중' },
+            '품질검사': { status: 'pending' }, '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' }
+          }
+        },
+        {
+          orderType: 'product', orderNumber: 'ORD-2026-0328-002', branch: '강북지사', manager: '이범호 이사',
+          siteName: '은평구 카페 데크', deliveryDate: '2026-04-15', orderDate: '2026-03-28',
+          products: [
+            { product: '합성목재 데크', spec: '140x25x2400 월넛', qty: 120, unit: 'EA', price: 15000, subtotal: 1800000 },
+            { product: '데크 하부 프레임', spec: '50x50x3000', qty: 40, unit: 'EA', price: 8000, subtotal: 320000 },
+            { product: '스테인리스 피스', spec: 'SUS 50mm', qty: 5, unit: 'BOX', price: 25000, subtotal: 125000 }
+          ],
+          total: 2245000, memo: '', status: '출고준비',
+          productionStages: {
+            '접수': { status: 'completed', completedDate: '2026-03-28' },
+            '설계확인': { status: 'completed', completedDate: '2026-03-29' },
+            '자재준비': { status: 'completed', completedDate: '2026-04-01' },
+            '제작중': { status: 'completed', completedDate: '2026-04-05' },
+            '품질검사': { status: 'completed', completedDate: '2026-04-08', comment: '검수 완료' },
+            '출고준비': { status: 'in-progress', comment: '포장 진행중' },
+            '출고완료': { status: 'pending' }
+          }
+        },
+        {
+          orderType: 'product', orderNumber: 'ORD-2026-0405-003', branch: '본사', manager: '김지훈 대리',
+          siteName: '판교 사옥 폴딩도어', deliveryDate: '2026-05-10', orderDate: '2026-04-05',
+          products: [
+            { product: '폴딩도어 FD-3000', spec: '3000x2400 블랙', qty: 2, unit: 'SET', price: 4200000, subtotal: 8400000 }
+          ],
+          total: 8400000, memo: '시공 일정 5/12 예정', status: '접수',
+          productionStages: {
+            '접수': { status: 'completed', completedDate: '2026-04-05', comment: '접수 완료' },
+            '설계확인': { status: 'in-progress' },
+            '자재준비': { status: 'pending' }, '제작중': { status: 'pending' },
+            '품질검사': { status: 'pending' }, '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' }
+          }
+        },
+        {
+          orderType: 'product', orderNumber: 'ORD-2026-0310-004', branch: '강남지사', manager: '백원준 이사',
+          siteName: '청담동 빌라 스크린', deliveryDate: '2026-03-30', orderDate: '2026-03-10',
+          products: [
+            { product: '짚스크린 ZS-250', spec: '2500x2000 그레이', qty: 4, unit: 'SET', price: 1800000, subtotal: 7200000 }
+          ],
+          total: 7200000, memo: '', status: '출고완료',
+          productionStages: {
+            '접수': { status: 'completed', completedDate: '2026-03-10' },
+            '설계확인': { status: 'completed', completedDate: '2026-03-12' },
+            '자재준비': { status: 'completed', completedDate: '2026-03-15' },
+            '제작중': { status: 'completed', completedDate: '2026-03-22' },
+            '품질검사': { status: 'completed', completedDate: '2026-03-25' },
+            '출고준비': { status: 'completed', completedDate: '2026-03-27' },
+            '출고완료': { status: 'completed', completedDate: '2026-03-29', comment: '배송 완료' }
+          }
+        },
+        {
+          orderType: 'parts', orderNumber: 'PRT-2026-0408-001', branch: '강북지사', manager: '이범호 이사',
+          siteName: '부품 발주', deliveryDate: '2026-04-12', orderDate: '2026-04-08',
+          products: [
+            { product: '리모컨', spec: '부품', qty: 5, unit: 'EA', price: 35000, subtotal: 175000 },
+            { product: '수신기', spec: '부품', qty: 5, unit: 'EA', price: 28000, subtotal: 140000 },
+            { product: '모터', spec: '부품', qty: 2, unit: 'EA', price: 120000, subtotal: 240000 }
+          ],
+          total: 555000, memo: 'A/S용 부품', status: '접수',
+          productionStages: { '접수': { status: 'completed', completedDate: '2026-04-08' }, '설계확인': { status: 'pending' }, '자재준비': { status: 'pending' }, '제작중': { status: 'pending' }, '품질검사': { status: 'pending' }, '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' } }
+        },
+        {
+          orderType: 'etc', orderNumber: 'ETC-2026-0407-001', branch: '본사', manager: '김지훈 대리',
+          siteName: '기타 발주', deliveryDate: '2026-04-14', orderDate: '2026-04-07',
+          products: [
+            { product: '메인 카달로그', spec: '기타', qty: 100, unit: 'EA', price: 3000, subtotal: 300000 },
+            { product: '명함', spec: '기타', qty: 200, unit: 'EA', price: 500, subtotal: 100000 }
+          ],
+          total: 400000, memo: '박람회용', status: '제작중', recipient: '김지훈', address: '서울시 강남구 역삼동 123',
+          productionStages: { '접수': { status: 'completed', completedDate: '2026-04-07' }, '설계확인': { status: 'completed', completedDate: '2026-04-08' }, '자재준비': { status: 'completed', completedDate: '2026-04-09' }, '제작중': { status: 'in-progress' }, '품질검사': { status: 'pending' }, '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' } }
+        },
+        {
+          orderType: 'product', orderNumber: 'ORD-2026-0402-005', branch: '수원지사', manager: '박성민 차장',
+          siteName: '영통 단독주택 난간', deliveryDate: '2026-04-25', orderDate: '2026-04-02',
+          products: [
+            { product: '유리난간 GR-100', spec: '12T 강화유리 1200H', qty: 15, unit: 'M', price: 280000, subtotal: 4200000 },
+            { product: '스테인리스 핸드레일', spec: 'SUS304 50Ø', qty: 15, unit: 'M', price: 85000, subtotal: 1275000 }
+          ],
+          total: 5475000, memo: '현장 실측 완료', status: '자재준비',
+          productionStages: {
+            '접수': { status: 'completed', completedDate: '2026-04-02' },
+            '설계확인': { status: 'completed', completedDate: '2026-04-04', comment: '도면 승인' },
+            '자재준비': { status: 'in-progress', comment: '유리 발주 완료, 입고 대기' },
+            '제작중': { status: 'pending' }, '품질검사': { status: 'pending' }, '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' }
+          }
+        },
+        {
+          orderType: 'product', orderNumber: 'ORD-2026-0320-006', branch: '강남지사', manager: '백원준 이사',
+          siteName: '논현동 상가 슬라이딩도어', deliveryDate: '2026-04-10', orderDate: '2026-03-20',
+          products: [
+            { product: '슬라이딩도어 SD-2400', spec: '2400x2100 실버', qty: 3, unit: 'SET', price: 3500000, subtotal: 10500000 }
+          ],
+          total: 10500000, memo: '오전 시공', status: '품질검사',
+          productionStages: {
+            '접수': { status: 'completed', completedDate: '2026-03-20' },
+            '설계확인': { status: 'completed', completedDate: '2026-03-22' },
+            '자재준비': { status: 'completed', completedDate: '2026-03-25' },
+            '제작중': { status: 'completed', completedDate: '2026-04-02' },
+            '품질검사': { status: 'in-progress', comment: '레일 동작 테스트 진행' },
+            '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' }
+          }
+        }
+      ];
+
+      try {
+        for (const order of testOrders) {
+          await addDoc(collection(db, 'works_orders'), {
+            ...order,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp()
+          });
+        }
+        alert(`테스트 발주 데이터 ${testOrders.length}건 생성 완료!`);
+        render();
+      } catch(e) {
+        console.error('Seed error:', e);
+        alert('데이터 생성 실패: ' + e.message);
       }
     }
 
