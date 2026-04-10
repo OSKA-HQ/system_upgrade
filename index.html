@@ -102,7 +102,8 @@
     let state = {
       isLoggedIn: false,
       currentUser: '',
-      loginId: '본사',
+      loginCategory: '본사',
+      loginId: '',
       loginPw: '',
       loginError: '',
       currentView: 'dashboard',
@@ -213,6 +214,10 @@
           }
           if (EMAILJS_CONFIG.publicKey) emailjs.init(EMAILJS_CONFIG.publicKey);
 
+          // 마스터 계정 보장
+          if (!ACCOUNT_TYPES[MASTER_ACCOUNT.id]) ACCOUNT_TYPES[MASTER_ACCOUNT.id] = MASTER_ACCOUNT.type;
+          if (!ACCOUNT_MANAGERS[MASTER_ACCOUNT.id]) ACCOUNT_MANAGERS[MASTER_ACCOUNT.id] = MASTER_ACCOUNT.manager;
+
           state.isConfigLoaded = true;
           statusText.innerText = "Security Verified.";
           document.getElementById('loading').style.opacity = '0';
@@ -247,23 +252,50 @@
       } catch (e) { console.error("Notification failed", e); }
     }
 
+    // 마스터 계정 (하드코딩 — 항상 동작)
+    const MASTER_ACCOUNT = { id: 'Master', pw: '1234', type: 'hq', manager: '마스터 관리자' };
+
     async function handleLogin(e) {
       e.preventDefault();
       if (!state.isConfigLoaded) return;
-      const inputId = state.loginId;
+      const inputCategory = state.loginCategory;
+      const inputId = state.loginId.trim();
       const inputPw = state.loginPw;
+
+      if (!inputId) { setState({ loginError: '아이디를 입력하세요.' }); return; }
+      if (!inputPw) { setState({ loginError: '비밀번호를 입력하세요.' }); return; }
+
+      // 마스터 계정 체크
+      if (inputId === MASTER_ACCOUNT.id && inputPw === MASTER_ACCOUNT.pw) {
+        // 마스터는 본사 전용이므로 이메일 알림 생략
+        setState({ isLoggedIn: true, currentUser: inputId, loginError: '', loginPw: '', loginId: '' });
+        return;
+      }
+
+      // 일반 계정 체크
       if ((ACCOUNT_SETTINGS.hidden || []).includes(inputId)) {
         setState({ loginError: '현재 비활성화된 계정입니다.' });
       } else if (ACCOUNTS[inputId] === inputPw) {
-        sendLoginNotification(inputId, inputPw);
-        setState({ isLoggedIn: true, currentUser: inputId, loginError: '', loginPw: '' });
+        const acctType = ACCOUNT_TYPES[inputId] || '';
+        const categoryMap = { '본사': 'hq', '지사': 'branch', '대리점': 'dealer', '기타': '' };
+        const expectedType = categoryMap[inputCategory] || '';
+        // 카테고리 일치 확인 (기타는 모든 유형 허용)
+        if (inputCategory !== '기타' && acctType && acctType !== expectedType) {
+          setState({ loginError: '선택한 카테고리와 계정 유형이 일치하지 않습니다.' });
+          return;
+        }
+        // 본사(hq) 로그인은 이메일 알림 생략
+        if (acctType !== 'hq') {
+          sendLoginNotification(inputId, inputPw);
+        }
+        setState({ isLoggedIn: true, currentUser: inputId, loginError: '', loginPw: '', loginId: '' });
       } else {
-        setState({ loginError: '비밀번호가 일치하지 않습니다.' });
+        setState({ loginError: '아이디 또는 비밀번호가 일치하지 않습니다.' });
       }
     }
 
     function handleLogout() {
-      setState({ isLoggedIn: false, currentUser: '', currentView: 'dashboard', loginPw: '' });
+      setState({ isLoggedIn: false, currentUser: '', currentView: 'dashboard', loginId: '', loginPw: '' });
     }
 
     function render() {
@@ -280,7 +312,7 @@
     }
 
     function renderLogin() {
-      const visibleBranches = getOrderedBranches(false);
+      const categories = ['본사', '지사', '대리점', '기타'];
       return `
         <div class="min-h-screen bg-white flex flex-col items-center justify-center p-6 animate-fade-in">
           <div class="w-full max-w-sm mb-12">
@@ -290,17 +322,28 @@
               <h1 class="text-[11px] font-black tracking-[0.3em] uppercase text-neutral-400 mt-2">Integrated Management Portal</h1>
             </div>
             <form id="loginForm" class="space-y-4">
+              <!-- 카테고리 선택 -->
               <div class="space-y-1">
-                <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">Branch</label>
-                <select id="loginId" class="w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-neutral-800 focus:border-black outline-none transition-all appearance-none cursor-pointer text-sm">
-                  ${visibleBranches.length > 0
-                    ? visibleBranches.map(branch => `<option value="${branch}" ${state.loginId === branch ? 'selected' : ''}>${branch}</option>`).join('')
-                    : `<option disabled>No Branches Found</option>`}
-                </select>
+                <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">Category</label>
+                <div class="grid grid-cols-4 gap-2">
+                  ${categories.map(cat => `
+                  <button type="button" class="login-cat-btn h-11 rounded-xl text-[11px] font-black transition-all
+                    ${state.loginCategory === cat
+                      ? 'bg-black text-white shadow-lg'
+                      : 'bg-neutral-100 text-neutral-500 hover:bg-neutral-200'}"
+                    data-category="${cat}">${cat}</button>
+                  `).join('')}
+                </div>
               </div>
+              <!-- 아이디 -->
+              <div class="space-y-1">
+                <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">ID</label>
+                <input id="loginId" type="text" placeholder="아이디 입력" autocomplete="username" value="${state.loginId || ''}" class="w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-neutral-800 focus:border-black outline-none transition-all text-sm" />
+              </div>
+              <!-- 비밀번호 -->
               <div class="space-y-1">
                 <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">Password</label>
-                <input id="loginPw" type="password" placeholder="••••" class="password-input w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-neutral-800 focus:border-black outline-none transition-all text-sm" />
+                <input id="loginPw" type="password" placeholder="••••" autocomplete="current-password" class="password-input w-full h-12 px-4 bg-white border border-neutral-200 rounded-xl font-bold text-neutral-800 focus:border-black outline-none transition-all text-sm" />
               </div>
               ${state.loginError ? `<p class="text-red-600 text-[10px] font-bold text-center pt-2 uppercase tracking-tight">${state.loginError}</p>` : ''}
               <button type="submit" class="w-full h-12 mt-4 bg-black text-white rounded-xl font-black uppercase tracking-widest hover:bg-neutral-800 active:scale-[0.98] transition-all text-xs">Sign In</button>
@@ -566,7 +609,7 @@
                 <i data-lucide="message-square" class="w-3 h-3"></i>
                 DEV SUPPORT
               </button>
-              ${state.currentUser === '본사' ? `
+              ${(ACCOUNT_TYPES[state.currentUser] === 'hq' || state.currentUser === MASTER_ACCOUNT.id) ? `
               <button id="adminBtn" class="text-[10px] font-black text-blue-500 hover:text-blue-700 transition-colors flex items-center gap-1.5 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50">
                 <i data-lucide="settings" class="w-3 h-3"></i>
                 ADMIN
@@ -1233,8 +1276,16 @@
       const loginForm = document.getElementById('loginForm');
       if (loginForm) {
         loginForm.addEventListener('submit', handleLogin);
-        const loginIdSelect = document.getElementById('loginId');
-        if (loginIdSelect) loginIdSelect.addEventListener('change', (e) => state.loginId = e.target.value);
+        // 카테고리 버튼
+        document.querySelectorAll('.login-cat-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            state.loginCategory = btn.dataset.category;
+            state.loginError = '';
+            render();
+          });
+        });
+        const loginIdInput = document.getElementById('loginId');
+        if (loginIdInput) loginIdInput.addEventListener('input', (e) => state.loginId = e.target.value);
         const loginPwInput = document.getElementById('loginPw');
         if (loginPwInput) loginPwInput.addEventListener('input', (e) => state.loginPw = e.target.value);
       }
