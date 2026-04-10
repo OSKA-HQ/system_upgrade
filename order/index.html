@@ -124,6 +124,7 @@
     let unsubCustomers = null;
     let crmFilter = '전체';
     let crmBrandFilter = '전체';
+    let crmRepeatFilter = '전체';   // '전체','2회 이상','3회 이상'
     let crmSearch = '';
     let crmPage = 0;
     const CRM_PAGE_SIZE = 50;
@@ -1937,9 +1938,30 @@
     }
 
     function renderCRM() {
+      // 전화번호별 문의 횟수 맵 (전체 데이터 기준)
+      const phoneCountMap = {};
+      customers.forEach(c => {
+        if (c.phone) {
+          const norm = c.phone.replace(/[^0-9]/g, '');
+          if (norm) phoneCountMap[norm] = (phoneCountMap[norm] || 0) + 1;
+        }
+      });
+
       const filtered = getFilteredCustomers();
       const paged = filtered.slice(crmPage * CRM_PAGE_SIZE, (crmPage + 1) * CRM_PAGE_SIZE);
       const totalPages = Math.ceil(filtered.length / CRM_PAGE_SIZE);
+
+      // 다회 문의 고객 수 (필터 카운트용)
+      const uniquePhones2 = new Set(); const uniquePhones3 = new Set();
+      customers.forEach(c => {
+        if (c.phone) {
+          const norm = c.phone.replace(/[^0-9]/g, '');
+          if (norm && phoneCountMap[norm] >= 2) uniquePhones2.add(norm);
+          if (norm && phoneCountMap[norm] >= 3) uniquePhones3.add(norm);
+        }
+      });
+      const repeat2Count = [...uniquePhones2].reduce((s, p) => s + phoneCountMap[p], 0);
+      const repeat3Count = [...uniquePhones3].reduce((s, p) => s + phoneCountMap[p], 0);
 
       // 파이프라인 카운트
       const counts = { '전체': customers.length };
@@ -2115,6 +2137,11 @@
                 <option value="오스카" ${crmBrandFilter === '오스카' ? 'selected' : ''}>오스카</option>
                 <option value="테라까사" ${crmBrandFilter === '테라까사' ? 'selected' : ''}>테라까사</option>
               </select>
+              <select id="crmRepeatSelect" class="input-base w-auto md:w-44" onchange="crmRepeatFilter=this.value; crmPage=0; render();">
+                <option value="전체" ${crmRepeatFilter === '전체' ? 'selected' : ''}>전체 고객</option>
+                <option value="2회 이상" ${crmRepeatFilter === '2회 이상' ? 'selected' : ''}>2회 이상 문의 (${repeat2Count}건)</option>
+                <option value="3회 이상" ${crmRepeatFilter === '3회 이상' ? 'selected' : ''}>3회 이상 문의 (${repeat3Count}건)</option>
+              </select>
             </div>
 
             <!-- 고객 테이블 -->
@@ -2142,6 +2169,10 @@
                       const rawGrade = (c.grade2 && c.grade2.trim()) || '';
                       const displayGrade = CRM_GRADES.includes(rawGrade) ? rawGrade : '-';
                       const gradeClass = CRM_GRADE_COLORS[displayGrade] || 'bg-neutral-50 text-neutral-400 border-neutral-200';
+                      const phoneNorm = c.phone ? c.phone.replace(/[^0-9]/g, '') : '';
+                      const pCount = phoneNorm ? (phoneCountMap[phoneNorm] || 1) : 1;
+                      const histIconColor = pCount >= 3 ? 'text-neutral-800' : pCount >= 2 ? 'text-neutral-500' : 'text-neutral-300';
+                      const histBadge = pCount >= 2 ? `<span class="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full text-[7px] font-black flex items-center justify-center ${pCount >= 3 ? 'bg-black text-white' : 'bg-neutral-400 text-white'}">${pCount}</span>` : '';
                       return `
                     <tr class="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">
                       <td class="px-3 py-3 text-neutral-400 font-bold">${c.no || '-'}</td>
@@ -2157,8 +2188,9 @@
                       <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${c.assignedBranch ? 'bg-green-50 text-green-600' : 'text-neutral-400'}">${c.assignedBranch || '-'}</span></td>
                       <td class="px-3 py-3 text-center">
                         <div class="flex items-center justify-center gap-1.5">
-                          <button onclick="openCustomerHistory('${c.phone || ''}')" class="text-neutral-300 hover:text-blue-500 transition-colors" title="고객관리">
+                          <button onclick="openCustomerHistory('${c.phone || ''}')" class="relative ${histIconColor} hover:text-blue-500 transition-colors" title="고객관리 (${pCount}회 문의)">
                             <i data-lucide="user-search" class="w-3.5 h-3.5"></i>
+                            ${histBadge}
                           </button>
                           <button onclick="openEditPanel('${c.id}')" class="text-neutral-300 hover:text-black transition-colors" title="정보 수정">
                             <i data-lucide="pencil" class="w-3 h-3"></i>
@@ -2197,6 +2229,19 @@
       if (crmFilter === '-') list = list.filter(c => !CRM_GRADES.includes(c.grade2));
       else if (crmFilter !== '전체') list = list.filter(c => c.grade2 === crmFilter);
       if (crmBrandFilter !== '전체') list = list.filter(c => c.brand === crmBrandFilter);
+      // 다회 문의 필터
+      if (crmRepeatFilter !== '전체') {
+        const phoneMap = {};
+        customers.forEach(c => {
+          if (c.phone) { const n = c.phone.replace(/[^0-9]/g, ''); if (n) phoneMap[n] = (phoneMap[n] || 0) + 1; }
+        });
+        const minCount = crmRepeatFilter === '3회 이상' ? 3 : 2;
+        list = list.filter(c => {
+          if (!c.phone) return false;
+          const n = c.phone.replace(/[^0-9]/g, '');
+          return n && (phoneMap[n] || 0) >= minCount;
+        });
+      }
       if (crmSearch.trim()) {
         const q = crmSearch.trim().toLowerCase();
         list = list.filter(c =>
