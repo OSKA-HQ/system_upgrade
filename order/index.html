@@ -178,7 +178,21 @@
         snapshot.forEach(doc => {
           customers.push({ id: doc.id, ...doc.data() });
         });
-        if (currentView === 'crm') render();
+        console.log('CRM loaded:', customers.length, 'records');
+        if (currentView === 'crm' || currentView === 'home') render();
+      }, (error) => {
+        console.error('CRM subscribe error:', error);
+        // 인덱스 문제시 orderBy 없이 재시도
+        const q2 = query(ref);
+        unsubCustomers = onSnapshot(q2, (snapshot) => {
+          customers = [];
+          snapshot.forEach(doc => {
+            customers.push({ id: doc.id, ...doc.data() });
+          });
+          customers.sort((a, b) => (b.no || 0) - (a.no || 0));
+          console.log('CRM loaded (fallback):', customers.length, 'records');
+          if (currentView === 'crm' || currentView === 'home') render();
+        });
       });
     }
 
