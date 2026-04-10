@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>CRM Data Import</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/moonspam/NanumSquare@2.0/nanumsquare.css">
+  <style>* { font-family: 'NanumSquare', sans-serif; }</style>
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+    import { getFirestore, collection, writeBatch, doc, getDocs, serverTimestamp, Timestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+    const app = initializeApp({
+      apiKey: "AIzaSyDs8IJANSBncJHcFFrF03pLM7JvEOppcY0",
+      authDomain: "oska-integrated-management.firebaseapp.com",
+      projectId: "oska-integrated-management",
+      storageBucket: "oska-integrated-management.firebasestorage.app",
+      messagingSenderId: "778732114280",
+      appId: "1:778732114280:web:96e00aff42bdbff3bf06dd"
+    });
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    await signInAnonymously(auth);
+
+    window.fireDB = db;
+    window.fireCollection = collection;
+    window.fireWriteBatch = writeBatch;
+    window.fireDoc = doc;
+    window.fireGetDocs = getDocs;
+    window.fireTimestamp = Timestamp;
+
+    document.getElementById('status').textContent = 'Firebase 연결 완료. 임포트 준비됨.';
+    document.getElementById('importBtn').disabled = false;
+    document.getElementById('checkBtn').disabled = false;
+  </script>
+</head>
+<body class="bg-white p-8 max-w-2xl mx-auto">
+  <div class="mb-8">
+    <h1 class="text-2xl font-black tracking-tight mb-2">CRM Data Import</h1>
+    <p class="text-sm text-neutral-400">crm_data.json → Firestore (crm_customers)</p>
+  </div>
+
+  <div id="status" class="p-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold mb-6">Firebase 연결 중...</div>
+
+  <div class="flex gap-3 mb-6">
+    <button id="checkBtn" onclick="checkExisting()" disabled class="px-6 py-3 bg-neutral-100 border border-neutral-200 rounded-xl text-xs font-black uppercase tracking-widest hover:bg-neutral-200 transition-all">기존 데이터 확인</button>
+    <button id="importBtn" onclick="startImport()" disabled class="px-6 py-3 bg-black text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-neutral-800 transition-all">임포트 시작</button>
+  </div>
+
+  <div id="progress" class="hidden mb-6">
+    <div class="h-4 bg-neutral-100 rounded-full overflow-hidden mb-2">
+      <div id="progressBar" class="h-full bg-black rounded-full transition-all" style="width:0%"></div>
+    </div>
+    <p id="progressText" class="text-xs font-bold text-neutral-400"></p>
+  </div>
+
+  <div id="log" class="p-4 bg-neutral-50 rounded-xl text-[11px] font-mono max-h-[400px] overflow-y-auto space-y-1"></div>
+
+  <script>
+    function log(msg) {
+      const el = document.getElementById('log');
+      el.innerHTML += `<div>${new Date().toLocaleTimeString()} — ${msg}</div>`;
+      el.scrollTop = el.scrollHeight;
+    }
+
+    async function checkExisting() {
+      const snapshot = await window.fireGetDocs(window.fireCollection(window.fireDB, 'crm_customers'));
+      log(`기존 crm_customers: ${snapshot.size}건`);
+      document.getElementById('status').textContent = `기존 데이터: ${snapshot.size}건`;
+    }
+
+    async function startImport() {
+      document.getElementById('importBtn').disabled = true;
+      document.getElementById('progress').classList.remove('hidden');
+
+      log('crm_data.json 로딩 중...');
+      const resp = await fetch('./crm_data.json');
+      const data = await resp.json();
+      log(`${data.length}건 로드 완료`);
+
+      const BATCH_SIZE = 400;
+      const totalBatches = Math.ceil(data.length / BATCH_SIZE);
+      let imported = 0;
+
+      for (let i = 0; i < totalBatches; i++) {
+        const batch = window.fireWriteBatch(window.fireDB);
+        const slice = data.slice(i * BATCH_SIZE, (i + 1) * BATCH_SIZE);
+
+        slice.forEach(record => {
+          const ref = window.fireDoc(window.fireCollection(window.fireDB, 'crm_customers'));
+          const dateTs = record.date ? window.fireTimestamp.fromDate(new Date(record.date + 'T00:00:00')) : null;
+          batch.set(ref, {
+            ...record,
+            createdAt: dateTs || window.fireTimestamp.now()
+          });
+        });
+
+        await batch.commit();
+        imported += slice.length;
+
+        const pct = Math.round((imported / data.length) * 100);
+        document.getElementById('progressBar').style.width = pct + '%';
+        document.getElementById('progressText').textContent = `${imported} / ${data.length} (${pct}%)`;
+        log(`배치 ${i + 1}/${totalBatches} 완료 (${slice.length}건)`);
+      }
+
+      log(`✅ 임포트 완료! 총 ${imported}건`);
+      document.getElementById('status').textContent = `✅ 임포트 완료! ${imported}건 저장됨`;
+      document.getElementById('status').classList.add('bg-green-50', 'border-green-200', 'text-green-700');
+    }
+  </script>
+</body>
+</html>
