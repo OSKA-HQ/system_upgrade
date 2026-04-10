@@ -71,27 +71,29 @@
     .timeline-dot.in-progress { background: #3b82f6; }
     .timeline-dot.pending { background: #d1d5db; }
 
-    /* 가로 진행바 스타일 */
-    .progress-bar-wrap { display: flex; gap: 3px; margin-top: 8px; }
-    .progress-bar-wrap .bar-seg { height: 6px; flex: 1; border-radius: 3px; transition: all 0.3s; }
+    /* 가로 진행바 스타일 (9단계) */
+    .progress-bar-wrap { display: flex; gap: 2px; margin-top: 8px; }
+    .progress-bar-wrap .bar-seg { height: 8px; flex: 1; border-radius: 4px; transition: all 0.3s; }
+    .progress-bar-wrap .bar-seg:hover { opacity: 0.8; transform: scaleY(1.4); }
     .progress-bar-wrap .bar-seg.seg-done { background: #22c55e; }
     .progress-bar-wrap .bar-seg.seg-active { background: #3b82f6; animation: pulse-seg 1.5s ease-in-out infinite; }
     .progress-bar-wrap .bar-seg.seg-wait { background: #e5e7eb; }
     @keyframes pulse-seg { 0%,100%{opacity:1} 50%{opacity:.45} }
 
-    .stage-labels { display: flex; gap: 3px; margin-top: 4px; }
-    .stage-labels span { flex: 1; text-align: center; font-size: 9px; font-weight: 700; color: #b0b0b0; }
+    .stage-labels { display: flex; gap: 2px; margin-top: 4px; }
+    .stage-labels span { flex: 1; text-align: center; font-size: 8px; font-weight: 700; color: #b0b0b0; white-space: nowrap; }
     .stage-labels span.lbl-done { color: #16a34a; }
     .stage-labels span.lbl-active { color: #2563eb; }
 
-    .stage-detail-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin-top: 12px; }
+    .stage-detail-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+    @media (max-width: 640px) { .stage-detail-grid { grid-template-columns: repeat(2, 1fr); } }
     .stage-card { background: white; border: 1px solid #f0f0f0; border-radius: 10px; padding: 10px; }
     .stage-card.card-done { border-left: 3px solid #22c55e; }
     .stage-card.card-active { border-left: 3px solid #3b82f6; }
     .stage-card.card-wait { border-left: 3px solid #e5e7eb; }
 
-    .order-summary-bar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-    .order-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 6px; }
+    .scrollbar-thin::-webkit-scrollbar { width: 4px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 2px; }
   </style>
 </head>
 
@@ -994,10 +996,11 @@
     }
 
     // ===== 발주 현황 (2단계: 생산 추적 워크스페이스) =====
+    const PRODUCTION_STAGES = ['접수', '자재', '제작', '품질1차', '도장', '품질2차', '포장', '출고', '완료'];
+
     function isOrderCompleted(order) {
-      const stages = ['접수', '설계확인', '자재준비', '제작중', '품질검사', '출고준비', '출고완료'];
       const ps = order.productionStages || {};
-      return stages.every(s => (ps[s] || {}).status === 'completed');
+      return PRODUCTION_STAGES.every(s => (ps[s] || {}).status === 'completed');
     }
 
     function renderOrderList() {
@@ -1052,7 +1055,7 @@
     }
 
     function renderOrderListItem(order, isHQ) {
-      const stages = ['접수', '설계확인', '자재준비', '제작중', '품질검사', '출고준비', '출고완료'];
+      const stages = PRODUCTION_STAGES;
       const orderStages = order.productionStages || {};
 
       // 현재 활성 단계 인덱스 계산
@@ -1063,24 +1066,24 @@
         if (st === 'completed') completedCount++;
         if (st === 'in-progress') activeIdx = i;
       });
-      if (activeIdx === -1) activeIdx = completedCount; // 다음 대기 단계
+      if (activeIdx === -1) activeIdx = completedCount;
       const progressPct = Math.round((completedCount / stages.length) * 100);
       const currentPhase = completedCount >= stages.length ? '완료' : stages[Math.min(activeIdx, stages.length - 1)];
 
+      // 로그 목록
+      const logs = order.stageLogs || [];
+
       return `
         <div class="border border-neutral-200 rounded-2xl overflow-hidden">
-          <!-- 발주 헤더 + 가로 진행바 -->
-          <div class="p-5 cursor-pointer hover:bg-neutral-50/50 transition-all" onclick="toggleOrderDetail('${order.id}')">
+          <!-- 발주 헤더 -->
+          <div class="p-5">
             <div class="flex items-start justify-between mb-3">
-              <div class="flex items-center gap-3">
-                <i data-lucide="chevron-down" class="w-4 h-4 text-neutral-300 order-toggle-${order.id}" style="transition:transform 0.2s;"></i>
-                <div>
-                  <div class="flex items-center gap-2 mb-1">
-                    <span class="text-[9px] font-black status-${order.status||'접수'} px-2 py-0.5 rounded-md">${order.status || '접수'}</span>
-                    <span class="text-xs font-black">${order.siteName || '-'}</span>
-                  </div>
-                  <p class="text-[10px] text-neutral-400">${order.branch || ''} · ${order.orderNumber || ''}</p>
+              <div>
+                <div class="flex items-center gap-2 mb-1">
+                  <span class="text-[9px] font-black status-${order.status||'접수'} px-2 py-0.5 rounded-md">${order.status || '접수'}</span>
+                  <span class="text-xs font-black">${order.siteName || '-'}</span>
                 </div>
+                <p class="text-[10px] text-neutral-400">${order.branch || ''} · ${order.orderNumber || ''}</p>
               </div>
               <div class="text-right flex items-center gap-4">
                 <div>
@@ -1094,21 +1097,29 @@
               </div>
             </div>
 
-            <!-- 가로 진행바 -->
+            <!-- 가로 진행바 (본사: 클릭 가능) -->
             <div class="progress-bar-wrap">
               ${stages.map((s, i) => {
                 const st = (orderStages[s] || {}).status || 'pending';
                 const cls = st === 'completed' ? 'seg-done' : st === 'in-progress' ? 'seg-active' : 'seg-wait';
-                return `<div class="bar-seg ${cls}" title="${s}"></div>`;
+                const clickAttr = isHQ ? `onclick="event.stopPropagation();advanceStage('${order.id}','${s}',${i})" style="cursor:pointer;"` : '';
+                return `<div class="bar-seg ${cls}" title="${s}: ${st === 'completed' ? '완료' : st === 'in-progress' ? '진행중' : '대기'}${isHQ ? ' (클릭하여 변경)' : ''}" ${clickAttr}></div>`;
               }).join('')}
             </div>
             <div class="stage-labels">
               ${stages.map((s, i) => {
                 const st = (orderStages[s] || {}).status || 'pending';
                 const cls = st === 'completed' ? 'lbl-done' : st === 'in-progress' ? 'lbl-active' : '';
-                return `<span class="${cls}">${s.length > 3 ? s.slice(0,2) : s}</span>`;
+                return `<span class="${cls}">${s}</span>`;
               }).join('')}
             </div>
+          </div>
+
+          <!-- 상세보기 버튼 -->
+          <div class="px-5 pb-4">
+            <button onclick="toggleOrderDetail('${order.id}')" class="w-full h-9 border border-neutral-200 rounded-xl text-[10px] font-black text-neutral-400 hover:bg-neutral-50 hover:text-neutral-600 active:scale-[0.99] transition-all flex items-center justify-center gap-1.5">
+              <i data-lucide="chevron-down" class="w-3 h-3 order-toggle-${order.id}" style="transition:transform 0.2s;"></i> 상세보기
+            </button>
           </div>
 
           <!-- 상세 (펼침) -->
@@ -1143,21 +1154,25 @@
                       </div>
                       ${stageData.completedDate ? `<p class="text-[8px] text-neutral-400">${formatDate(stageData.completedDate)}</p>` : ''}
                       ${stageData.comment ? `<p class="text-[9px] text-neutral-500 mt-1">${stageData.comment}</p>` : ''}
-                      ${isHQ ? `
-                        <div class="mt-2 pt-2 border-t border-neutral-100 space-y-1.5">
-                          <select class="input-base stage-status" data-order-id="${order.id}" data-stage="${stage}" style="height:28px;font-size:10px;padding:2px 8px;">
-                            <option value="pending" ${stageData.status === 'pending' ? 'selected' : ''}>대기</option>
-                            <option value="in-progress" ${stageData.status === 'in-progress' ? 'selected' : ''}>진행중</option>
-                            <option value="completed" ${stageData.status === 'completed' ? 'selected' : ''}>완료</option>
-                          </select>
-                          <textarea class="input-base stage-comment" data-order-id="${order.id}" data-stage="${stage}" placeholder="코멘트..." style="height:30px;font-size:10px;resize:vertical;padding:4px 8px;min-height:30px;">${stageData.comment || ''}</textarea>
-                          <button class="w-full h-7 bg-black text-white text-[8px] font-black rounded hover:bg-neutral-800 transition-all save-stage" data-order-id="${order.id}" data-stage="${stage}">저장</button>
-                        </div>
-                      ` : ''}
                     </div>
                   `;
                 }).join('')}
               </div>
+
+              <!-- 진행 로그 -->
+              ${logs.length > 0 ? `
+              <div class="mt-5 pt-4 border-t border-neutral-200">
+                <p class="text-[9px] font-black text-neutral-300 uppercase tracking-[0.3em] mb-3">진행 로그</p>
+                <div class="space-y-2 max-h-48 overflow-y-auto scrollbar-thin">
+                  ${logs.slice().reverse().map(log => `
+                    <div class="flex items-start gap-2 text-[10px]">
+                      <span class="text-neutral-300 whitespace-nowrap">${log.date || ''}</span>
+                      <span class="text-neutral-700">${log.message}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+              ` : ''}
             </div>
           </div>
         </div>
@@ -1249,12 +1264,7 @@
         });
         document.getElementById('btnSaveNotice')?.addEventListener('click', saveNotice);
       }
-      if (currentView === 'orders') {
-        // 생산 단계 업데이트
-        document.querySelectorAll('.save-stage').forEach(btn => {
-          btn.addEventListener('click', updateProductionStage);
-        });
-      }
+      // 단계 변경은 advanceStage() 함수로 inline onclick 처리됨
     }
 
     function toggleOrderDetail(orderId) {
@@ -2204,12 +2214,17 @@
             { product: '파고라 전동모터', spec: 'AC220V', qty: 1, unit: 'EA', price: 450000, subtotal: 450000 }
           ],
           total: 8950000, memo: '납품 전 현장 확인 요청', status: '제작중',
+          stageLogs: [
+            { date: '2026-04-01 09:00', message: '본사 관리자님이 [접수] 완료 하였습니다.', operator: '본사 관리자', stage: '접수', action: 'completed' },
+            { date: '2026-04-03 14:00', message: '본사 관리자님이 [자재] 완료 하였습니다.', operator: '본사 관리자', stage: '자재', action: 'completed' },
+            { date: '2026-04-05 10:00', message: '본사 관리자님이 [제작] 진행중 하였습니다.', operator: '본사 관리자', stage: '제작', action: 'in-progress' }
+          ],
           productionStages: {
-            '접수': { status: 'completed', completedDate: '2026-04-01', comment: '접수 완료' },
-            '설계확인': { status: 'completed', completedDate: '2026-04-03', comment: '설계 확인 완료' },
-            '자재준비': { status: 'completed', completedDate: '2026-04-05', comment: '자재 입고' },
-            '제작중': { status: 'in-progress', comment: '프레임 조립 중' },
-            '품질검사': { status: 'pending' }, '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' }
+            '접수': { status: 'completed', completedDate: '2026-04-01', comment: '본사 관리자 완료 처리' },
+            '자재': { status: 'completed', completedDate: '2026-04-03', comment: '자재 입고 완료' },
+            '제작': { status: 'in-progress', comment: '프레임 조립 중' },
+            '품질1차': { status: 'pending' }, '도장': { status: 'pending' }, '품질2차': { status: 'pending' },
+            '포장': { status: 'pending' }, '출고': { status: 'pending' }, '완료': { status: 'pending' }
           }
         },
         {
@@ -2220,15 +2235,17 @@
             { product: '데크 하부 프레임', spec: '50x50x3000', qty: 40, unit: 'EA', price: 8000, subtotal: 320000 },
             { product: '스테인리스 피스', spec: 'SUS 50mm', qty: 5, unit: 'BOX', price: 25000, subtotal: 125000 }
           ],
-          total: 2245000, memo: '', status: '출고준비',
+          total: 2245000, memo: '', status: '포장',
+          stageLogs: [],
           productionStages: {
             '접수': { status: 'completed', completedDate: '2026-03-28' },
-            '설계확인': { status: 'completed', completedDate: '2026-03-29' },
-            '자재준비': { status: 'completed', completedDate: '2026-04-01' },
-            '제작중': { status: 'completed', completedDate: '2026-04-05' },
-            '품질검사': { status: 'completed', completedDate: '2026-04-08', comment: '검수 완료' },
-            '출고준비': { status: 'in-progress', comment: '포장 진행중' },
-            '출고완료': { status: 'pending' }
+            '자재': { status: 'completed', completedDate: '2026-03-30' },
+            '제작': { status: 'completed', completedDate: '2026-04-03' },
+            '품질1차': { status: 'completed', completedDate: '2026-04-05', comment: '1차 검수 완료' },
+            '도장': { status: 'completed', completedDate: '2026-04-07' },
+            '품질2차': { status: 'completed', completedDate: '2026-04-08', comment: '최종 검수 완료' },
+            '포장': { status: 'in-progress', comment: '포장 진행중' },
+            '출고': { status: 'pending' }, '완료': { status: 'pending' }
           }
         },
         {
@@ -2238,11 +2255,12 @@
             { product: '폴딩도어 FD-3000', spec: '3000x2400 블랙', qty: 2, unit: 'SET', price: 4200000, subtotal: 8400000 }
           ],
           total: 8400000, memo: '시공 일정 5/12 예정', status: '접수',
+          stageLogs: [],
           productionStages: {
             '접수': { status: 'completed', completedDate: '2026-04-05', comment: '접수 완료' },
-            '설계확인': { status: 'in-progress' },
-            '자재준비': { status: 'pending' }, '제작중': { status: 'pending' },
-            '품질검사': { status: 'pending' }, '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' }
+            '자재': { status: 'in-progress' },
+            '제작': { status: 'pending' }, '품질1차': { status: 'pending' }, '도장': { status: 'pending' },
+            '품질2차': { status: 'pending' }, '포장': { status: 'pending' }, '출고': { status: 'pending' }, '완료': { status: 'pending' }
           }
         },
         {
@@ -2251,15 +2269,18 @@
           products: [
             { product: '짚스크린 ZS-250', spec: '2500x2000 그레이', qty: 4, unit: 'SET', price: 1800000, subtotal: 7200000 }
           ],
-          total: 7200000, memo: '', status: '출고완료',
+          total: 7200000, memo: '', status: '완료',
+          stageLogs: [{ date: '2026-03-29 16:00', message: '본사 관리자님이 [출고] 완료 하였습니다. → 강남지사에 출고준비 완료 알림 발송됨.', operator: '본사 관리자', stage: '출고', action: 'completed' }],
           productionStages: {
             '접수': { status: 'completed', completedDate: '2026-03-10' },
-            '설계확인': { status: 'completed', completedDate: '2026-03-12' },
-            '자재준비': { status: 'completed', completedDate: '2026-03-15' },
-            '제작중': { status: 'completed', completedDate: '2026-03-22' },
-            '품질검사': { status: 'completed', completedDate: '2026-03-25' },
-            '출고준비': { status: 'completed', completedDate: '2026-03-27' },
-            '출고완료': { status: 'completed', completedDate: '2026-03-29', comment: '배송 완료' }
+            '자재': { status: 'completed', completedDate: '2026-03-12' },
+            '제작': { status: 'completed', completedDate: '2026-03-16' },
+            '품질1차': { status: 'completed', completedDate: '2026-03-18' },
+            '도장': { status: 'completed', completedDate: '2026-03-22' },
+            '품질2차': { status: 'completed', completedDate: '2026-03-24' },
+            '포장': { status: 'completed', completedDate: '2026-03-26' },
+            '출고': { status: 'completed', completedDate: '2026-03-28' },
+            '완료': { status: 'completed', completedDate: '2026-03-29', comment: '배송 완료' }
           }
         },
         {
@@ -2271,7 +2292,8 @@
             { product: '모터', spec: '부품', qty: 2, unit: 'EA', price: 120000, subtotal: 240000 }
           ],
           total: 555000, memo: 'A/S용 부품', status: '접수',
-          productionStages: { '접수': { status: 'completed', completedDate: '2026-04-08' }, '설계확인': { status: 'pending' }, '자재준비': { status: 'pending' }, '제작중': { status: 'pending' }, '품질검사': { status: 'pending' }, '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' } }
+          stageLogs: [],
+          productionStages: { '접수': { status: 'completed', completedDate: '2026-04-08' }, '자재': { status: 'pending' }, '제작': { status: 'pending' }, '품질1차': { status: 'pending' }, '도장': { status: 'pending' }, '품질2차': { status: 'pending' }, '포장': { status: 'pending' }, '출고': { status: 'pending' }, '완료': { status: 'pending' } }
         },
         {
           orderType: 'etc', orderNumber: 'ETC-2026-0407-001', branch: '본사', manager: '김지훈 대리',
@@ -2281,7 +2303,8 @@
             { product: '명함', spec: '기타', qty: 200, unit: 'EA', price: 500, subtotal: 100000 }
           ],
           total: 400000, memo: '박람회용', status: '제작중', recipient: '김지훈', address: '서울시 강남구 역삼동 123',
-          productionStages: { '접수': { status: 'completed', completedDate: '2026-04-07' }, '설계확인': { status: 'completed', completedDate: '2026-04-08' }, '자재준비': { status: 'completed', completedDate: '2026-04-09' }, '제작중': { status: 'in-progress' }, '품질검사': { status: 'pending' }, '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' } }
+          stageLogs: [],
+          productionStages: { '접수': { status: 'completed', completedDate: '2026-04-07' }, '자재': { status: 'completed', completedDate: '2026-04-08' }, '제작': { status: 'in-progress' }, '품질1차': { status: 'pending' }, '도장': { status: 'pending' }, '품질2차': { status: 'pending' }, '포장': { status: 'pending' }, '출고': { status: 'pending' }, '완료': { status: 'pending' } }
         },
         {
           orderType: 'product', orderNumber: 'ORD-2026-0402-005', branch: '수원지사', manager: '박성민 차장',
@@ -2290,12 +2313,15 @@
             { product: '유리난간 GR-100', spec: '12T 강화유리 1200H', qty: 15, unit: 'M', price: 280000, subtotal: 4200000 },
             { product: '스테인리스 핸드레일', spec: 'SUS304 50Ø', qty: 15, unit: 'M', price: 85000, subtotal: 1275000 }
           ],
-          total: 5475000, memo: '현장 실측 완료', status: '자재준비',
+          total: 5475000, memo: '현장 실측 완료', status: '도장',
+          stageLogs: [],
           productionStages: {
             '접수': { status: 'completed', completedDate: '2026-04-02' },
-            '설계확인': { status: 'completed', completedDate: '2026-04-04', comment: '도면 승인' },
-            '자재준비': { status: 'in-progress', comment: '유리 발주 완료, 입고 대기' },
-            '제작중': { status: 'pending' }, '품질검사': { status: 'pending' }, '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' }
+            '자재': { status: 'completed', completedDate: '2026-04-04' },
+            '제작': { status: 'completed', completedDate: '2026-04-06' },
+            '품질1차': { status: 'completed', completedDate: '2026-04-07', comment: '도면 승인' },
+            '도장': { status: 'in-progress', comment: '분체도장 진행중' },
+            '품질2차': { status: 'pending' }, '포장': { status: 'pending' }, '출고': { status: 'pending' }, '완료': { status: 'pending' }
           }
         },
         {
@@ -2304,14 +2330,17 @@
           products: [
             { product: '슬라이딩도어 SD-2400', spec: '2400x2100 실버', qty: 3, unit: 'SET', price: 3500000, subtotal: 10500000 }
           ],
-          total: 10500000, memo: '오전 시공', status: '품질검사',
+          total: 10500000, memo: '오전 시공', status: '출고',
+          stageLogs: [],
           productionStages: {
             '접수': { status: 'completed', completedDate: '2026-03-20' },
-            '설계확인': { status: 'completed', completedDate: '2026-03-22' },
-            '자재준비': { status: 'completed', completedDate: '2026-03-25' },
-            '제작중': { status: 'completed', completedDate: '2026-04-02' },
-            '품질검사': { status: 'in-progress', comment: '레일 동작 테스트 진행' },
-            '출고준비': { status: 'pending' }, '출고완료': { status: 'pending' }
+            '자재': { status: 'completed', completedDate: '2026-03-22' },
+            '제작': { status: 'completed', completedDate: '2026-03-25' },
+            '품질1차': { status: 'completed', completedDate: '2026-03-27' },
+            '도장': { status: 'completed', completedDate: '2026-03-30' },
+            '품질2차': { status: 'completed', completedDate: '2026-04-02' },
+            '포장': { status: 'completed', completedDate: '2026-04-04' },
+            '출고': { status: 'in-progress', comment: '출고 대기중' }, '완료': { status: 'pending' }
           }
         }
       ];
@@ -2609,37 +2638,84 @@
       }
     }
 
-    // ===== 생산 단계 업데이트 =====
-    async function updateProductionStage(e) {
-      const btn = e.target;
-      const orderId = btn.dataset.orderId;
-      const stage = btn.dataset.stage;
+    // ===== 생산 단계 클릭 변경 (본사 전용) =====
+    async function advanceStage(orderId, stageName, stageIdx) {
+      if (currentType !== 'hq') return;
 
-      const statusSelect = document.querySelector(`.stage-status[data-order-id="${orderId}"][data-stage="${stage}"]`);
-      const commentTextarea = document.querySelector(`.stage-comment[data-order-id="${orderId}"][data-stage="${stage}"]`);
+      const order = orders.find(o => o.id === orderId);
+      if (!order) return;
 
-      const newStatus = statusSelect.value;
-      const comment = commentTextarea.value.trim();
+      const ps = order.productionStages || {};
+      const currentStatus = (ps[stageName] || {}).status || 'pending';
+
+      // 다음 상태 결정: pending → in-progress → completed → pending (토글)
+      let nextStatus, actionLabel;
+      if (currentStatus === 'pending') {
+        nextStatus = 'in-progress';
+        actionLabel = `${stageName} 진행중으로 변경`;
+      } else if (currentStatus === 'in-progress') {
+        nextStatus = 'completed';
+        actionLabel = `${stageName} 완료`;
+      } else {
+        nextStatus = 'pending';
+        actionLabel = `${stageName} 대기로 되돌림`;
+      }
+
+      // 출고 단계 완료 시 특별 확인
+      if (stageName === '출고' && nextStatus === 'completed') {
+        if (!confirm(`출고 완료 처리하시겠습니까?\n${order.branch}에 출고준비 완료 알림이 발송됩니다.`)) return;
+      } else {
+        if (!confirm(`${actionLabel} 하시겠습니까?`)) return;
+      }
+
+      const operator = currentBranch ? `${currentBranch} ${currentManager}` : `본사 ${currentManager || '관리자'}`;
+      const now = new Date();
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+
+      // 로그 메시지 생성
+      let logMsg = `${operator}님이 [${stageName}] ${nextStatus === 'completed' ? '완료' : nextStatus === 'in-progress' ? '진행중' : '대기'} 하였습니다.`;
 
       try {
-        const { db, doc, updateDoc, serverTimestamp } = window.WORKS_DB;
-        const order = orders.find(o => o.id === orderId);
-        const stages = order.productionStages || {};
+        const { db, doc, updateDoc, serverTimestamp, arrayUnion } = window.WORKS_DB;
 
-        stages[stage] = {
-          status: newStatus,
-          completedDate: newStatus === 'completed' ? serverTimestamp() : stages[stage]?.completedDate,
-          comment: comment
+        // 단계 상태 업데이트
+        ps[stageName] = {
+          status: nextStatus,
+          completedDate: nextStatus === 'completed' ? dateStr : (ps[stageName]?.completedDate || ''),
+          comment: nextStatus === 'completed' ? `${operator} 완료 처리` : (ps[stageName]?.comment || '')
         };
 
-        await updateDoc(doc(db, 'works_orders', orderId), {
-          productionStages: stages,
+        // 출고 완료 시: 다음 단계(완료) 자동 in-progress + 알림 로그
+        if (stageName === '출고' && nextStatus === 'completed') {
+          ps['완료'] = { ...(ps['완료'] || {}), status: 'in-progress' };
+          logMsg += ` → ${order.branch}에 출고준비 완료 알림 발송됨.`;
+        }
+
+        // Firestore 업데이트
+        const updateData = {
+          productionStages: ps,
           updatedAt: serverTimestamp()
-        });
-        alert(`${stage} 단계가 업데이트되었습니다.`);
+        };
+
+        // 로그 배열에 추가 (arrayUnion 사용 가능 시)
+        const logEntry = { date: dateStr, message: logMsg, operator, stage: stageName, action: nextStatus };
+
+        // stageLogs 배열 업데이트
+        const existingLogs = order.stageLogs || [];
+        existingLogs.push(logEntry);
+        updateData.stageLogs = existingLogs;
+
+        await updateDoc(doc(db, 'works_orders', orderId), updateData);
+
+        // 출고 완료 시 알림 표시
+        if (stageName === '출고' && nextStatus === 'completed') {
+          alert(`출고 완료 처리되었습니다!\n\n📦 ${order.branch} (${order.manager})에게\n출고준비 완료 알림이 발송되었습니다.\n\n현장: ${order.siteName}\n발주번호: ${order.orderNumber}`);
+        }
+
+        render();
       } catch(e) {
-        console.error('Stage update error:', e);
-        alert('단계 업데이트 실패');
+        console.error('Stage advance error:', e);
+        alert('단계 변경 실패: ' + e.message);
       }
     }
 
