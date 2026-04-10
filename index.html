@@ -571,8 +571,10 @@
         <div class="h-screen flex flex-col bg-white overflow-hidden">
           <nav class="flex justify-between items-center px-6 py-3 border-b border-neutral-100 bg-white z-50">
             <div class="flex items-center gap-4">
-              <img src="assets/오스카CI_04LogoBLACK_1.png" alt="OSKA" class="h-5 object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-              <div style="display:none;" class="w-7 h-7 bg-black text-white flex items-center justify-center text-xs font-black rounded">O</div>
+              <button id="logoHome" class="flex items-center gap-4 hover:opacity-70 transition-opacity">
+                <img src="assets/오스카CI_04LogoBLACK_1.png" alt="OSKA" class="h-5 object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                <div style="display:none;" class="w-7 h-7 bg-black text-white flex items-center justify-center text-xs font-black rounded">O</div>
+              </button>
               <span class="font-black text-xs tracking-widest uppercase">${title}</span>
             </div>
             <button id="exitView" class="group flex items-center gap-2 text-[10px] font-black text-neutral-400 hover:text-black transition-all">
@@ -593,13 +595,13 @@
       return `
         <div class="min-h-screen bg-white animate-fade-in">
           <nav class="fixed w-full top-0 z-[60] bg-white/80 backdrop-blur-md border-b border-neutral-100 h-16 flex items-center px-8 justify-between">
-            <div class="flex items-center gap-3">
+            <button id="logoHome" class="flex items-center gap-3 hover:opacity-70 transition-opacity">
               <img src="assets/오스카CI_04LogoBLACK_1.png" alt="OSKA Logo" class="h-6 md:h-7 object-contain" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
               <div style="display:none;" class="flex items-center gap-3">
                 <div class="w-8 h-8 bg-black text-white flex items-center justify-center text-lg font-black rounded-lg">O</div>
                 <span class="text-sm font-black tracking-[0.2em] uppercase">OSKA</span>
               </div>
-            </div>
+            </button>
             <div class="flex items-center gap-6">
               <div class="hidden md:flex items-center gap-2">
                 <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
@@ -632,15 +634,17 @@
                   Start <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
                 </div>
               </button>
+              <button id="btnOrder" class="w-full bg-neutral-900 text-white rounded-2xl px-8 py-7 md:px-12 md:py-8 shadow-lg hover:bg-neutral-800 transition-all flex items-center justify-between group overflow-hidden relative text-left">
+                <div class="relative z-10">
+                  <div class="inline-block px-2 py-0.5 bg-white/10 rounded text-[8px] font-black tracking-widest uppercase mb-1 text-white/50">Business Hub</div>
+                  <h2 class="text-2xl md:text-3xl font-black tracking-tighter uppercase leading-none">OSKA Works</h2>
+                  <p class="text-[11px] font-bold text-white/60 mt-2">발주 · CRM · 고객관리 · AS견적</p>
+                </div>
+                <div class="relative z-10 flex items-center gap-2 text-[10px] font-black tracking-widest bg-white text-black px-4 py-2 rounded-lg group-hover:gap-4 transition-all uppercase">
+                  Start <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+                </div>
+              </button>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button id="btnOrder" class="bg-white border border-neutral-200 rounded-2xl px-8 py-7 hover:border-black transition-all flex items-center justify-between group relative text-left">
-                  <div>
-                    <div class="inline-block px-2 py-0.5 bg-neutral-100 rounded text-[8px] font-black tracking-widest uppercase mb-1 text-neutral-400">Business Hub</div>
-                    <h2 class="text-xl md:text-2xl font-black tracking-tighter uppercase leading-none">OSKA Works</h2>
-                    <p class="text-[10px] font-bold text-neutral-400 mt-1">오스카 웍스</p>
-                  </div>
-                  <i data-lucide="briefcase" class="w-4 h-4 text-neutral-300 group-hover:text-black transition-all"></i>
-                </button>
                 <button id="${userIsDealer ? 'btnDeckBlocked' : 'btnDeck'}" class="bg-white border border-neutral-200 rounded-2xl px-8 py-7 ${userIsDealer ? 'opacity-50 grayscale' : 'hover:border-black transition-all'} flex items-center justify-between group relative text-left">
                   <div>
                     <div class="inline-block px-2 py-0.5 bg-neutral-100 rounded text-[8px] font-black tracking-widest uppercase mb-1 text-neutral-400">Inventory</div>
@@ -649,8 +653,6 @@
                   </div>
                   <i data-lucide="${userIsDealer ? 'lock' : 'plus-circle'}" class="w-4 h-4 text-neutral-300 group-hover:text-black transition-all"></i>
                 </button>
-              </div>
-              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <button id="btnCatalog" class="bg-neutral-50 border border-neutral-100 rounded-2xl px-8 py-7 hover:bg-neutral-100 transition-all flex items-center justify-between group relative text-left">
                   <div>
                     <div class="inline-block px-2 py-0.5 bg-neutral-200 rounded text-[8px] font-black tracking-widest uppercase mb-1 text-neutral-500">Messaging</div>
@@ -658,14 +660,6 @@
                     <p class="text-[10px] font-bold text-neutral-400 mt-1">카탈로그 문자 송부 시스템</p>
                   </div>
                   <i data-lucide="send" class="w-4 h-4 text-neutral-400 group-hover:text-black transition-all"></i>
-                </button>
-                <button id="btnAs" class="bg-white border border-neutral-100 rounded-2xl px-8 py-7 hover:bg-neutral-50 transition-all flex items-center justify-between group relative text-left">
-                  <div>
-                    <div class="inline-block px-2 py-0.5 bg-orange-50 rounded text-[8px] font-black tracking-widest uppercase mb-1 text-orange-400">After Service</div>
-                    <h2 class="text-xl md:text-2xl font-black tracking-tighter uppercase leading-none">AS Quotation</h2>
-                    <p class="text-[10px] font-bold text-neutral-400 mt-1">AS 견적내기</p>
-                  </div>
-                  <i data-lucide="wrench" class="w-4 h-4 text-neutral-300 group-hover:text-black transition-all"></i>
                 </button>
               </div>
             </div>
@@ -1296,13 +1290,14 @@
       if (document.getElementById('registerForm')) document.getElementById('registerForm').addEventListener('submit', submitRegistration);
 
       if (document.getElementById('logoutBtn')) document.getElementById('logoutBtn').addEventListener('click', handleLogout);
+      document.querySelectorAll('#logoHome').forEach(btn => btn.addEventListener('click', () => setState({ currentView: 'dashboard' })));
       if (document.getElementById('exitView')) document.getElementById('exitView').addEventListener('click', () => setState({ currentView: 'dashboard' }));
       if (document.getElementById('btnQuotation')) document.getElementById('btnQuotation').addEventListener('click', () => setState({currentView: 'quotation'}));
       if (document.getElementById('btnOrder')) document.getElementById('btnOrder').addEventListener('click', () => setState({ currentView: 'order' }));
       if (document.getElementById('btnDeck')) document.getElementById('btnDeck').addEventListener('click', () => setState({currentView: 'deck'}));
       if (document.getElementById('btnCatalog')) document.getElementById('btnCatalog').addEventListener('click', () => setState({currentView: 'catalog'}));
       document.querySelectorAll('#btnAsk').forEach(btn => btn.addEventListener('click', () => setState({currentView: 'ask'})));
-      if (document.getElementById('btnAs')) document.getElementById('btnAs').addEventListener('click', () => setState({currentView: 'as'}));
+      // AS견적은 OSKA Works 내부에서 접근
       if (document.getElementById('btnDeckBlocked')) document.getElementById('btnDeckBlocked').addEventListener('click', () => alert('권한이 없습니다.'));
 
       // 관리자 모드 이벤트
