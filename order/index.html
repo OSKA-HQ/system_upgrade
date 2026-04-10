@@ -109,6 +109,7 @@
     let currentType = '';
     let currentView = 'home'; // home, order_select, order, order_parts, order_etc, orders, notice, crm
     let orderCategory = ''; // product, parts, etc
+    let orderListTab = 'active'; // active, completed
     let orders = [];
     let notices = [];
     let orderRows = [];
@@ -992,26 +993,46 @@
     }
 
     // ===== 발주 현황 (2단계: 생산 추적 워크스페이스) =====
+    function isOrderCompleted(order) {
+      const stages = ['접수', '설계확인', '자재준비', '제작중', '품질검사', '출고준비', '출고완료'];
+      const ps = order.productionStages || {};
+      return stages.every(s => (ps[s] || {}).status === 'completed');
+    }
+
     function renderOrderList() {
       const myOrders = currentBranch && currentType !== 'hq' ? orders.filter(o => o.branch === currentBranch) : orders;
       const isHQ = currentType === 'hq';
+
+      const activeOrders = myOrders.filter(o => !isOrderCompleted(o));
+      const completedOrders = myOrders.filter(o => isOrderCompleted(o));
+      const displayOrders = orderListTab === 'active' ? activeOrders : completedOrders;
 
       return `
         <div class="min-h-screen bg-white animate-fade-in">
           ${renderNav()}
           <main class="pt-20 pb-20 max-w-4xl mx-auto px-6">
-            <div class="mb-8">
+            <div class="mb-6">
               <h1 class="text-xl font-black tracking-tight">Order History</h1>
               <p class="text-[10px] text-neutral-400 font-bold uppercase tracking-widest mt-1">발주내역 확인 · ${myOrders.length}건</p>
             </div>
 
+            <!-- 탭 -->
+            <div class="flex items-center gap-1 mb-6 border-b border-neutral-100">
+              <button onclick="orderListTab='active';render();" class="px-4 py-2.5 text-[11px] font-black tracking-wide transition-all ${orderListTab === 'active' ? 'border-b-2 border-black text-black' : 'border-b-2 border-transparent text-neutral-400 hover:text-neutral-600'}">
+                진행중 <span class="ml-1 text-[10px] ${orderListTab === 'active' ? 'bg-black text-white' : 'bg-neutral-200 text-neutral-500'} px-1.5 py-0.5 rounded-full">${activeOrders.length}</span>
+              </button>
+              <button onclick="orderListTab='completed';render();" class="px-4 py-2.5 text-[11px] font-black tracking-wide transition-all ${orderListTab === 'completed' ? 'border-b-2 border-black text-black' : 'border-b-2 border-transparent text-neutral-400 hover:text-neutral-600'}">
+                출고완료 <span class="ml-1 text-[10px] ${orderListTab === 'completed' ? 'bg-black text-white' : 'bg-neutral-200 text-neutral-500'} px-1.5 py-0.5 rounded-full">${completedOrders.length}</span>
+              </button>
+            </div>
+
             <div id="orderListContainer" class="space-y-4">
-              ${myOrders.length > 0
-                ? myOrders.map(o => renderOrderListItem(o, isHQ)).join('')
+              ${displayOrders.length > 0
+                ? displayOrders.map(o => renderOrderListItem(o, isHQ)).join('')
                 : `<div class="text-center py-16">
-                    <i data-lucide="inbox" class="w-10 h-10 text-neutral-200 mx-auto mb-4"></i>
-                    <p class="text-sm text-neutral-300 font-bold mb-4">발주 내역이 없습니다</p>
-                    ${currentType === 'hq' ? `<button onclick="seedTestOrders()" class="h-10 px-5 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 active:scale-[0.98] transition-all">테스트 데이터 생성</button>` : ''}
+                    <i data-lucide="${orderListTab === 'completed' ? 'check-circle' : 'inbox'}" class="w-10 h-10 text-neutral-200 mx-auto mb-4"></i>
+                    <p class="text-sm text-neutral-300 font-bold mb-4">${orderListTab === 'completed' ? '출고완료된 발주가 없습니다' : '진행중인 발주가 없습니다'}</p>
+                    ${currentType === 'hq' && orderListTab === 'active' ? `<button onclick="seedTestOrders()" class="h-10 px-5 bg-amber-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-600 active:scale-[0.98] transition-all">테스트 데이터 생성</button>` : ''}
                   </div>`
               }
             </div>
