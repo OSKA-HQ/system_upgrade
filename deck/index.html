@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OSKA 스마트 통합 견적 시스템 (Final Release)</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- html2canvas & jsPDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- Google Fonts (Pretendard) -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+
+    <!-- [Patch] EmailJS SDK & Init -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <script>
+        (function() {
+            // 전달받은 Public Key 적용
+            emailjs.init("Wee5GwKPwshYQEFty");
+        })();
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'oska-black': '#1a1a1a',
+                        'oska-white': '#f7f7f7',
+                        'oska-gray': '#333333',
+                        'oska-blue': '#2563eb',
+                        'oska-red': '#dc2626',
+                    },
+                    fontFamily: {
+                        sans: ['Pretendard', 'sans-serif'],
+                    },
+                    screens: {
+                        'print': {'raw': 'print'},
+                    }
+                }
+            }
+        };
+    </script>
+
+    <style>
+        body { font-family: 'Pretendard', sans-serif; background-color: #f3f4f6; -webkit-tap-highlight-color: transparent; }
+        
+        /* 스크롤바 커스텀 */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; }
+        ::-webkit-scrollbar-thumb { background: #c1c1c1; border-radius: 4px; }
+        
+        .app-container {
+            width: 100%; max-width: 1400px; margin: 0 auto;
+            background: white; box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            min-height: 90vh; display: flex; flex-direction: column;
+        }
+
+        .capture-area { padding: 20px; background-color: white; flex: 1; }
+        @media (min-width: 1024px) { .capture-area { padding: 40px; } }
+
+        .input-base {
+            width: 100%; border: 1px solid #e5e7eb; padding: 10px 12px;
+            border-radius: 6px; font-size: 14px; transition: all 0.2s; background-color: #fff;
+        }
+        .input-base:focus { outline: none; border-color: #1a1a1a; box-shadow: 0 0 0 2px rgba(26,26,26,0.1); }
+        .input-base:disabled { background-color: #f9fafb; color: #9ca3af; }
+
+        /* 테이블 스타일 */
+        .table-wrapper {
+            overflow-x: auto; -webkit-overflow-scrolling: touch;
+            margin-bottom: 1rem; border: 1px solid #e5e7eb; border-radius: 8px;
+        }
+        .excel-table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 13px; }
+        .excel-table th {
+            background-color: #f8fafc; color: #475569; border-bottom: 2px solid #e2e8f0;
+            padding: 12px 8px; font-weight: 700; text-align: center; white-space: nowrap;
+        }
+        .excel-table td { border-bottom: 1px solid #f1f5f9; padding: 6px; vertical-align: middle; }
+        .excel-table tr:hover { background-color: #fcfcfc; }
+
+        .excel-input {
+            width: 100%; padding: 6px; border: 1px solid transparent; border-radius: 4px;
+            background: transparent; outline: none; transition: all 0.2s;
+        }
+        .excel-input:focus { background-color: white; border-color: #cbd5e1; }
+
+        /* 섹션 헤더 */
+        .section-header {
+            background: linear-gradient(to right, #1a1a1a, #333); color: white;
+            padding: 12px 16px; font-weight: 700; font-size: 15px; margin-top: 24px;
+            border-radius: 8px 8px 0 0; display: flex; align-items: center; gap: 8px;
+        }
+
+        /* 체크박스 & 옵션 */
+        .chk-wrap {
+            display: flex; align-items: center; gap: 8px; font-size: 14px;
+            cursor: pointer; padding: 8px; border-radius: 6px; transition: bg 0.2s;
+        }
+        .chk-wrap:hover { background-color: #f3f4f6; }
+        .chk-wrap input[type="checkbox"] {
+            appearance: none; width: 18px; height: 18px; border: 2px solid #d1d5db; border-radius: 4px;
+            position: relative; cursor: pointer; transition: 0.2s;
+        }
+        .chk-wrap input[type="checkbox"]:checked { background-color: #1a1a1a; border-color: #1a1a1a; }
+        .chk-wrap input[type="checkbox"]:checked::after {
+            content: '✔'; color: white; position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%); font-size: 12px;
+        }
+
+        /* 버튼 */
+        .btn-action {
+            padding: 14px 28px; border-radius: 10px; font-weight: 700;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+            transition: all 0.2s; cursor: pointer; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        /* 모달 공통 */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.6); display: flex; justify-content: center; align-items: center;
+            z-index: 9999; opacity: 0; pointer-events: none; transition: opacity 0.2s; backdrop-filter: blur(2px);
+        }
+        .modal-overlay.active { opacity: 1; pointer-events: auto; }
+        .modal-box {
+            background: white; padding: 30px; border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 90%; max-width: 400px; text-align: center;
+            transform: scale(0.95); transition: transform 0.2s;
+        }
+        .modal-overlay.active .modal-box { transform: scale(1); }
+
+        /* 관리자 모달 (넓은 버전) */
+        .modal-box.large { max-width: 800px; text-align: left; }
+        
+        /* PDF 생성용 스타일 */
+        #pdf-hidden-container {
+            position: fixed; left: 0; top: 0; width: 1600px; height: 0;
+            overflow: visible; z-index: -9999; opacity: 0; pointer-events: none;
+        }
+        .pdf-mode .input-base, .pdf-mode .excel-input, .pdf-mode select, .pdf-mode textarea {
+            border: none !important; background: transparent !important; box-shadow: none !important;
+            padding: 0 !important; appearance: none; resize: none;
+        }
+        .pdf-mode .section-header { background: #1a1a1a !important; color: white !important; -webkit-print-color-adjust: exact; margin-top: 10px !important; padding: 8px 12px !important; }
+        .pdf-mode .capture-area { padding: 30px !important; max-width: 1600px !important; width: 100% !important; }
+        
+        /* 로딩 */
+        .spinner {
+            border: 4px solid #f3f3f3; border-top: 4px solid #1a1a1a; border-radius: 50%;
+            width: 40px; height: 40px; animation: spin 1s linear infinite; margin-bottom: 16px;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body class="bg-gray-100 py-4 px-2 md:py-8 md:px-4 text-gray-800">
+
+    <!-- 할인 경고 모달 -->
+    <div id="discount-modal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold text-gray-900 mb-2">할인 적용 안내</h3>
+            <p class="text-sm text-gray-600 mb-6 leading-relaxed">지사와의 계약 관계상 본사는 특수한 경우를 제외하고 별도의 할인정책이 불가합니다.</p>
+            <button onclick="closeWarningModal()" class="w-full bg-oska-black text-white font-bold py-3 px-4 rounded hover:bg-gray-800">확인</button>
+        </div>
+    </div>
+
+    <!-- 관리자 로그인 모달 -->
+    <div id="manager-login-modal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold text-gray-900 mb-4">🔐 관리자 접근</h3>
+            <p class="text-sm text-gray-500 mb-4">대리점 공급가 및 마진 확인을 위해 비밀번호를 입력하세요.</p>
+            <input type="password" id="manager-pw" class="input-base text-center mb-4 text-lg" placeholder="비밀번호 입력" onkeyup="if(event.key==='Enter') checkManagerPassword()">
+            <div class="flex gap-2">
+                <button onclick="closeManagerLogin()" class="flex-1 bg-gray-200 text-gray-700 font-bold py-3 rounded hover:bg-gray-300">취소</button>
+                <button onclick="checkManagerPassword()" class="flex-1 bg-oska-black text-white font-bold py-3 rounded hover:bg-gray-800">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 관리자 리포트 모달 -->
+    <div id="manager-report-modal" class="modal-overlay">
+        <div class="modal-box large bg-white w-full max-h-[90vh] overflow-y-auto flex flex-col">
+            <div class="flex justify-between items-center mb-6 pb-4 border-b">
+                <h3 class="text-2xl font-black text-oska-black">📊 대리점 공급가 및 마진 분석</h3>
+                <button onclick="closeManagerReport()" class="text-gray-400 hover:text-black font-bold text-2xl">×</button>
+            </div>
+            
+            <div class="flex-grow overflow-auto">
+                <div class="mb-6">
+                    <h4 class="font-bold text-sm text-gray-500 mb-2">1. 제품 공급가 (본사 → 대리점)</h4>
+                    <div class="overflow-x-auto border rounded-lg">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+                                <tr>
+                                    <th class="px-4 py-3">품명</th>
+                                    <th class="px-4 py-3 text-right">소비자 판매가</th>
+                                    <th class="px-4 py-3 text-center">공급율</th>
+                                    <th class="px-4 py-3 text-right text-blue-600">본사 공급가</th>
+                                    <th class="px-4 py-3 text-right text-green-600">대리점 마진</th>
+                                </tr>
+                            </thead>
+                            <tbody id="manager-prod-tbody" class="divide-y divide-gray-200">
+                                <!-- JS로 생성됨 -->
+                            </tbody>
+                            <tfoot class="bg-gray-50 font-bold">
+                                <tr>
+                                    <td class="px-4 py-3">파고라 합계</td>
+                                    <td class="px-4 py-3 text-right" id="mgr-prod-consumer-total">0</td>
+                                    <td class="px-4 py-3 text-center">-</td>
+                                    <td class="px-4 py-3 text-right text-blue-600" id="mgr-prod-supply-total">0</td>
+                                    <td class="px-4 py-3 text-right text-green-600" id="mgr-prod-margin-total">0</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <p class="text-xs text-red-500 mt-2 font-medium">* 해당 페이지는 파고라 제품군의 원가 및 수익 분석을 위해 최적화되어 있습니다.</p>
+                </div>
+
+                <div>
+                    <h4 class="font-bold text-sm text-gray-500 mb-2">2. 예상 수익 요약</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-gray-50 p-4 rounded-lg border">
+                            <div class="text-xs text-gray-500 mb-1">총 견적 금액 (VAT포함)</div>
+                            <div class="text-xl font-bold text-gray-800" id="mgr-total-est">0</div>
+                        </div>
+                        <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                            <div class="text-xs text-blue-500 mb-1">본사 입금액 (예상)</div>
+                            <div class="text-xl font-bold text-blue-700" id="mgr-total-supply">0</div>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-lg border border-green-100">
+                            <div class="text-xs text-green-500 mb-1">대리점 총 수익 (예상)</div>
+                            <div class="text-xl font-bold text-green-700" id="mgr-total-margin">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-8 pt-4 border-t flex justify-end">
+                <button onclick="closeManagerReport()" class="bg-oska-black text-white px-6 py-2.5 rounded font-bold hover:bg-gray-800">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 로딩 오버레이 -->
+    <div id="loading-overlay" class="fixed inset-0 bg-white/90 z-[10000] hidden flex-col justify-center items-center backdrop-blur-sm">
+        <div class="spinner"></div>
+        <div class="text-xl font-bold text-gray-800">PDF 생성 중...</div>
+        <div class="text-sm text-gray-500 mt-2">잠시만 기다려주세요.</div>
+    </div>
+
+    <!-- 상단 네비게이션 -->
+    <nav class="w-full max-w-[1400px] mx-auto mb-6 bg-white p-4 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-oska-black rounded-lg flex items-center justify-center text-white font-bold text-xl">O</div>
+            <div>
+                <h1 class="text-xl font-bold text-gray-900 leading-tight">OSKA Smart Quotation</h1>
+                <p class="text-xs text-gray-500">통합 견적 관리 시스템</p>
+            </div>
+        </div>
+        
+        <div class="flex bg-gray-100 p-1 rounded-lg w-full md:w-auto">
+            <button onclick="switchTab(1)" id="nav-btn-1" class="flex-1 md:flex-none px-6 py-2.5 rounded-md text-sm font-bold transition-all shadow-sm bg-white text-gray-900">상담 시트</button>
+            <button onclick="switchTab(2)" id="nav-btn-2" class="flex-1 md:flex-none px-6 py-2.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-900 transition-all">견적서 작성</button>
+        </div>
+
+        <div class="flex gap-2">
+            <button onclick="saveData(true)" class="text-xs font-medium text-gray-500 hover:text-blue-600 px-3 py-2 border rounded hover:bg-blue-50 transition-colors">저장</button>
+            <button onclick="resetData()" class="text-xs font-medium text-gray-500 hover:text-red-600 px-3 py-2 border rounded hover:bg-red-50 transition-colors">초기화</button>
+        </div>
+    </nav>
+
+    <!-- 메인 컨텐츠 영역 -->
+    <main class="w-full max-w-[1400px] mx-auto bg-white rounded-xl shadow-sm overflow-hidden min-h-[800px] relative">
+        
+        <!-- PAGE 1: 상담 시트 -->
+        <div id="page-1" class="fade-in">
+            <div id="capture-area-1" class="capture-area">
+                <!-- 헤더 -->
+                <div class="flex flex-col md:flex-row justify-between items-end border-b-4 border-black pb-6 mb-8 gap-4">
+                    <div>
+                        <h2 class="text-4xl font-extrabold text-oska-black tracking-tight">CONSULTATION SHEET</h2>
+                        <p class="text-gray-500 mt-2 font-medium">오스카 프리미엄 아웃도어 솔루션 상담 기록</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm text-gray-500 mb-1">Date</div>
+                        <div id="view-date-1" class="font-bold text-2xl text-oska-black"></div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
+                    <!-- 왼쪽 컬럼 (담당자/고객정보) -->
+                    <div class="lg:col-span-4 space-y-8 lg:border-r lg:border-gray-100 lg:pr-8">
+                        <section>
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-oska-black rounded-full"></span>담당자 정보</h3>
+                            <div class="space-y-4 bg-gray-50 p-5 rounded-lg border border-gray-100">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Branch / 지사</label>
+                                    <select id="branch-select" class="input-base" onchange="handleBranchChange()">
+                                        <option value="">지사 선택</option>
+                                        <option value="본사">본사</option>
+                                        <option value="강북지사">강북지사</option>
+                                        <option value="강남지사">강남지사</option>
+                                        <option value="경상지사">경상지사</option>
+                                        <option value="전라(제주)지사">전라(제주)지사</option>
+                                        <option value="직접입력">직접 입력</option>
+                                    </select>
+                                    <input type="text" id="branch-input" class="input-base mt-2 hidden" placeholder="지사명 입력">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Manager / 담당자</label>
+                                    <select id="handler-select" class="input-base" onchange="handleHandlerChange()">
+                                        <option value="">담당자 선택</option>
+                                        <option value="본사 이한울 이사">본사 이한울 이사</option>
+                                        <option value="본사 김선준 실장">본사 김선준 실장</option>
+                                        <option value="본사 장윤서 프로">본사 장윤서 프로</option>
+                                        <option value="강북지사 이범호 이사">강북지사 이범호 이사</option>
+                                        <option value="강남지사 백원준 이사">강남지사 백원준 이사</option>
+                                        <option value="경남지사 이주훈 이사">경남지사 이주훈 이사</option>
+                                        <option value="전라제주지사 이우경 이사">전라제주지사 이우경 이사</option>
+                                        <option value="직접 입력">직접 입력</option>
+                                    </select>
+                                    <input type="text" id="handler-input" class="input-base mt-2 hidden" placeholder="담당자명 입력">
+                                </div>
+                            </div>
+                        </section>
+
+                        <section>
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-oska-black rounded-full"></span>고객 정보</h3>
+                            <div class="space-y-3">
+                                <div class="grid grid-cols-3 gap-2 items-center">
+                                    <span class="text-sm font-bold text-gray-600">고객명</span>
+                                    <input type="text" id="cust-name" class="input-base col-span-2" placeholder="성함 입력">
+                                </div>
+                                <div class="grid grid-cols-3 gap-2 items-center">
+                                    <span class="text-sm font-bold text-gray-600">연락처</span>
+                                    <input type="tel" id="cust-phone" class="input-base col-span-2" placeholder="010-0000-0000">
+                                </div>
+                                <div class="grid grid-cols-3 gap-2 items-start pt-2">
+                                    <span class="text-sm font-bold text-gray-600 mt-2">주소</span>
+                                    <div class="col-span-2 space-y-2">
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <select id="region-do" class="input-base"><option value="">시/도</option></select>
+                                            <select id="region-si" class="input-base" disabled><option value="">시/군/구</option></select>
+                                        </div>
+                                        <input type="text" id="cust-addr-detail" class="input-base" placeholder="상세주소">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-3 gap-2 items-center pt-2">
+                                    <span class="text-sm font-bold text-gray-600">예상 설치일</span>
+                                    <input type="date" id="install-date" class="input-base col-span-2">
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <!-- 중앙/우측 컬럼 (체크리스트 & 메모) -->
+                    <div class="lg:col-span-8 flex flex-col gap-8">
+                        <section>
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-oska-black rounded-full"></span>현장 체크리스트</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 bg-white rounded-xl">
+                                <!-- 항목 1 -->
+                                <div>
+                                    <h4 class="text-xs font-bold text-gray-500 mb-2 uppercase bg-gray-100 p-2 rounded inline-block">상담 경로</h4>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="chk-wrap"><input type="checkbox"> 유선 상담</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 현장 방문</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 쇼룸 내방</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 박람회</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 지인/소개</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 기타</label>
+                                    </div>
+                                </div>
+                                <!-- 항목 2 -->
+                                <div>
+                                    <h4 class="text-xs font-bold text-gray-500 mb-2 uppercase bg-gray-100 p-2 rounded inline-block">고객 유형</h4>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="chk-wrap"><input type="checkbox"> B2C (일반)</label>
+                                        <label class="chk-wrap"><input type="checkbox"> B2B (기업)</label>
+                                        <label class="chk-wrap"><input type="checkbox"> B2G (관공서)</label>
+                                        <label class="chk-wrap"><input type="checkbox"> B2D (대리점)</label>
+                                        <label class="chk-wrap"><input type="checkbox"> B to E (수출)</label>
+                                    </div>
+                                </div>
+                                <!-- 항목 3 -->
+                                <div>
+                                    <h4 class="text-xs font-bold text-gray-500 mb-2 uppercase bg-gray-100 p-2 rounded inline-block">기술 행정 지원</h4>
+                                    <div class="flex flex-col gap-2">
+                                        <label class="chk-wrap"><input type="checkbox"> 설계(도면)지원</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 디자인(랜더) 지원</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 가설 건축물 신고 보조</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 설치 안심 구독 서비스 (KESIA)</label>
+                                    </div>
+                                </div>
+                                <!-- 항목 4 -->
+                                <div>
+                                    <h4 class="text-xs font-bold text-gray-500 mb-2 uppercase bg-gray-100 p-2 rounded inline-block">현장 바닥(하지) 상황</h4>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="chk-wrap"><input type="checkbox"> 목재 데크</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 석재 데크</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 콘크리트</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 흙/잔디</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 옥상 방수층</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 기타</label>
+                                    </div>
+                                </div>
+                                <!-- 항목 5 -->
+                                <div class="md:col-span-2">
+                                    <h4 class="text-xs font-bold text-gray-500 mb-2 uppercase bg-gray-100 p-2 rounded inline-block">시공 환경 확인</h4>
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                        <label class="chk-wrap"><input type="checkbox"> 전기 작업 가능</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 사다리차 진입 가능</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 스카이 장비 진입</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 엘리베이터 이용</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 현장 사진 제공</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 현장 도면 제공</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 처마 높이 확인</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="flex-grow flex flex-col">
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-oska-black rounded-full"></span>상담 메모</h3>
+                            <div class="flex-grow relative">
+                                <textarea id="consult-memo" class="w-full h-48 md:h-full p-6 bg-[#fffdeb] border border-yellow-200 rounded-lg resize-none focus:ring-2 focus:ring-yellow-400 focus:outline-none text-sm leading-relaxed" placeholder="고객의 요청사항, 특이사항, 제품 옵션(컬러, 사이즈) 등을 자유롭게 기록하세요."></textarea>
+                                <div class="absolute top-2 right-2 text-yellow-600/20 pointer-events-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+
+                <!-- 하단 유의사항 -->
+                <div class="mt-12 pt-8 border-t border-gray-200">
+                    <h4 class="font-bold text-sm text-gray-900 mb-3">[가견적 유의사항]</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-xs text-gray-500 leading-relaxed">
+                        <p><span class="font-bold text-gray-700">• 가견적 안내:</span> 본 견적서는 상담 편의를 위한 ‘가견적서(Preliminary Quote)’입니다. 정확한 견적은 현장 방문 및 실측 후 현장 여건(설치 난이도, 마감재 등)에 따라 변동될 수 있습니다.</p>
+                        <p><span class="font-bold text-gray-700">• 산출 기준:</span> 본 견적 금액은 별도의 설계비가 포함되지 않은 ‘납품/실행가’ 기준으로 작성되었습니다. 추후 상세 도면 설계나 사양 변경 요청 시 견적 금액이 조정될 수 있습니다.</p>
+                        <p><span class="font-bold text-gray-700">• 결제 조건:</span> 제품가액(자재비)은 완납 조건이며, 시공비는 공사 종료 후 즉시 지급 조건입니다. (VAT 별도)</p>
+                        <p><span class="font-bold text-gray-700">• 별도 공사:</span> 1차 전기 인입 및 바닥 기초 토목/보강 공사 등은 견적 외 별도 사항입니다.</p>
+                        <p><span class="font-bold text-gray-700">• 장비 비용:</span> 견적 시 반영하지 않은 현장 진입 여건에 따른 양중 장비(크레인, 스카이 등) 사용료는 실비 청구됩니다.</p>
+                        <p><span class="font-bold text-gray-700">• 현장 인력:</span> 건설 현장 등 특수 상황에서 사다리 보조, 안전 감시, 또는 정규 편성 인원 외 추가 인력 투입이 필요한 경우 별도 비용이 발생할 수 있습니다.</p>
+                        <p><span class="font-bold text-gray-700">• 철회 불가:</span> 본 제품은 주문 제작(Custom-made) 특성상 발주 후 단순 변심에 의한 취소 및 반품이 불가합니다.</p>
+                    </div>
+                </div>
+                
+                <div class="absolute bottom-6 right-8 text-oska-black font-black text-5xl opacity-5 pointer-events-none tracking-tighter">OSKA</div>
+            </div>
+        </div>
+
+        <!-- PAGE 2: 견적서 -->
+        <div id="page-2" class="hidden fade-in">
+            <div id="capture-area-2" class="capture-area">
+                <!-- 견적서 헤더 -->
+                <div class="flex flex-col md:flex-row justify-between items-start mb-8 pb-6 border-b-2 border-oska-black gap-4">
+                    <div>
+                        <span class="text-xs font-bold text-oska-blue tracking-[0.2em] uppercase mb-1 block">Premium Outdoor Solution</span>
+                        <h1 class="text-4xl md:text-5xl font-black text-oska-black tracking-tight">QUOTATION</h1>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm font-bold text-gray-500">Estimate Date</div>
+                        <div id="view-date-2" class="text-2xl font-bold text-oska-black tabular-nums"></div>
+                    </div>
+                </div>
+
+                <!-- 공급자/발주자 정보 -->
+                <div class="flex flex-col md:flex-row border border-gray-300 rounded-lg overflow-hidden mb-10 text-sm">
+                    <div class="w-full md:w-1/2 p-6 border-b md:border-b-0 md:border-r border-gray-300 bg-white">
+                        <h3 class="font-bold text-gray-400 mb-4 text-xs uppercase tracking-wider">Supplier (공급자)</h3>
+                        <dl class="grid grid-cols-[80px_1fr] gap-y-3">
+                            <dt class="text-gray-500">상호</dt><dd class="font-bold text-lg text-gray-900">(주)오스카</dd>
+                            <dt class="text-gray-500">담당자</dt><dd id="est-handler" class="font-medium">-</dd>
+                            <dt class="text-gray-500">연락처</dt><dd class="font-medium">1800-5945 / 010-0000-0000</dd>
+                        </dl>
+                    </div>
+                    <div class="w-full md:w-1/2 p-6 bg-gray-50/50">
+                        <h3 class="font-bold text-gray-400 mb-4 text-xs uppercase tracking-wider">Customer (발주자)</h3>
+                        <dl class="grid grid-cols-[80px_1fr] gap-y-3">
+                            <dt class="text-gray-500">성함</dt><dd id="est-cust-name" class="font-bold text-lg text-gray-900">-</dd>
+                            <dt class="text-gray-500">연락처</dt><dd id="est-cust-phone" class="font-medium">-</dd>
+                            <dt class="text-gray-500">현장주소</dt><dd id="est-cust-addr" class="font-medium break-keep">-</dd>
+                        </dl>
+                    </div>
+                </div>
+
+                <!-- 1. 제품 상세 내역 -->
+                <div class="section-header">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    1. 제품 상세 내역 (Product Details)
+                </div>
+                <div class="mb-8">
+                    <div class="table-wrapper">
+                        <table class="excel-table">
+                            <colgroup><col width="50"><col width="180"><col width="160"><col width="100"><col width="180"><col width="50"><col width="50"><col width="100"><col width="120"><col width="50" class="hidden-on-print"></colgroup>
+                            <thead>
+                                <tr><th>No</th><th>품명</th><th>규격(Span)</th><th>색상</th><th>옵션</th><th>단위</th><th>수량</th><th>단가</th><th>공급가액</th><th class="hidden-on-print">삭제</th></tr>
+                            </thead>
+                            <tbody id="est-tbody"></tbody>
+                        </table>
+                    </div>
+                    <button onclick="addRow()" class="hidden-on-print w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-oska-blue hover:text-oska-blue hover:bg-blue-50 transition-all font-bold text-sm flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        제품 항목 추가
+                    </button>
+                </div>
+
+                <!-- 2. 시공 및 부대 비용 -->
+                <div class="section-header">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    2. 시공 및 기타 부대비용
+                </div>
+                <div class="mb-8">
+                    <div class="table-wrapper">
+                        <table class="excel-table">
+                            <colgroup><col width="150"><col width="200"><col width="200"><col width="50"><col width="50"><col width="120"><col width="120"><col width="50" class="hidden-on-print"></colgroup>
+                            <thead>
+                                <tr><th>구분</th><th>항목명</th><th>상세내용</th><th>단위</th><th>수량</th><th>단가</th><th>공급가액</th><th class="hidden-on-print">삭제</th></tr>
+                            </thead>
+                            <tbody id="cons-tbody"></tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="hidden-on-print grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <button onclick="addDirectConsRow()" class="py-2.5 px-3 rounded border border-blue-200 bg-blue-50 text-blue-700 font-bold text-xs hover:bg-blue-100 transition-colors">+ 직접공사비</button>
+                        <button onclick="addMaterialTransportRow()" class="py-2.5 px-3 rounded border border-green-200 bg-green-50 text-green-700 font-bold text-xs hover:bg-green-100 transition-colors">+ 자재 반입비</button>
+                        <button onclick="addIndirectConsRow()" class="py-2.5 px-3 rounded border border-orange-200 bg-orange-50 text-orange-700 font-bold text-xs hover:bg-orange-100 transition-colors">+ 간접공사비</button>
+                        <button onclick="addConsRow()" class="py-2.5 px-3 rounded border border-gray-200 bg-white text-gray-700 font-bold text-xs hover:bg-gray-50 transition-colors">+ 기타 항목</button>
+                    </div>
+                </div>
+
+                <!-- 하단 합계 및 비고 -->
+                <div class="flex flex-col lg:flex-row gap-8">
+                    <div class="w-full lg:w-2/3">
+                        <div class="border border-gray-300 rounded-lg p-5 h-full bg-white shadow-sm">
+                            <h4 class="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">Note / Remarks (특이사항)</h4>
+                            <textarea id="remarks-area" class="w-full h-32 text-sm resize-none focus:outline-none leading-relaxed text-gray-700" placeholder="납기일, 배송 조건, 현장 특이사항 등을 입력하세요."></textarea>
+                        </div>
+                    </div>
+                    <div class="w-full lg:w-1/3">
+                        <div class="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                            <table class="w-full text-sm">
+                                <tr class="text-gray-500"><td class="py-1">제품 합계</td><td class="text-right tabular-nums" id="val-prod-sum">0</td></tr>
+                                <tr class="text-gray-500 border-b border-gray-200"><td class="py-1 pb-3">시공/기타 합계</td><td class="text-right pb-3 tabular-nums" id="val-cons-sum">0</td></tr>
+                                <tr class="text-gray-800 font-bold"><td class="py-3">총 공급가액</td><td class="text-right tabular-nums text-base" id="val-supply">0</td></tr>
+                                <tr class="text-red-500"><td class="py-2 font-medium">할인 (Discount)</td><td class="text-right"><input type="tel" id="val-discount" class="text-right bg-transparent border-b border-red-200 w-24 text-red-600 font-bold focus:outline-none focus:border-red-500" placeholder="0" oninput="formatDiscount(this)"></td></tr>
+                                <tr class="text-gray-500 border-b border-gray-200"><td class="py-2 pb-4">부가세 (VAT)</td><td class="text-right pb-4 tabular-nums" id="val-tax">0</td></tr>
+                                <tr class="text-oska-black"><td class="pt-4 text-lg font-extrabold">총 견적금액</td><td class="pt-4 text-right text-3xl font-black text-oska-red tracking-tight tabular-nums">₩ <span id="val-total">0</span></td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-12 text-center">
+                    <div class="inline-block px-4 py-2 border border-gray-200 rounded-full text-[10px] text-gray-400">
+                        (주)오스카 | 대표: 이한울 | 사업자번호: 519-88-01710 | 경기도 평택시 오성면 오성서로 5-9
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 하단 액션 버튼 -->
+        <div class="sticky bottom-0 bg-white/95 backdrop-blur border-t border-gray-200 p-4 flex justify-center gap-4 z-50">
+            <!-- 1페이지 하단: 견적서 작성 버튼 -->
+            <div id="footer-page-1" class="w-full flex justify-center">
+                <button onclick="switchTab(2)" class="btn-action bg-oska-black text-white hover:bg-gray-800 shadow-lg shadow-gray-200 w-full md:w-auto min-w-[200px] text-lg">
+                    견적서 작성하기 <span class="ml-2 text-sm">▶</span>
+                </button>
+            </div>
+
+            <!-- 2페이지 하단: 기존 버튼 (상담시트 이동, 관리자, PDF) -->
+            <div id="footer-page-2" class="w-full hidden justify-center gap-4">
+                <button onclick="switchTab(1)" id="btn-back" class="btn-action bg-white border border-gray-300 text-gray-700 hover:bg-gray-50">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                    상담 시트
+                </button>
+                <div class="flex gap-2">
+                    <button onclick="openManagerLogin()" class="btn-action bg-gray-600 text-white hover:bg-gray-700 shadow-md">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        관리자 페이지
+                    </button>
+                    <button onclick="saveAsPDF()" class="btn-action bg-oska-black text-white hover:bg-gray-800 shadow-lg shadow-gray-200">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        PDF 저장
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- PDF 생성용 -->
+    <div id="pdf-hidden-container"></div>
+
+    <script>
+        // --- 1. 상수 및 데이터 정의 ---
+        const regions = {'서울특별시':['강남구','강동구','강북구','강서구','관악구','광진구','구로구','금천구','노원구','도봉구','동대문구','동작구','마포구','서대문구','서초구','성동구','성북구','송파구','양천구','영등포구','용산구','은평구','종로구','중구','중랑구'],'부산광역시':['강서구','금정구','기장군','남구','동구','동래구','부산진구','북구','사상구','사하구','서구','수영구','연제구','영도구','중구','해운대구'],'대구광역시':['군위군','남구','달서구','달성군','동구','북구','서구','수성구','중구'],'인천광역시':['강화군','계양구','남동구','동구','미추홀구','부평구','서구','연수구','옹진군','중구'],'광주광역시':['광산구','남구','동구','북구','서구'],'대전광역시':['대덕구','동구','서구','유성구','중구'],'울산광역시':['남구','동구','북구','울주군','중구'],'세종특별자치시':['세종시'],'경기도':['가평군','고양시','과천시','광명시','광주시','구리시','군포시','김포시','남양주시','동두천시','부천시','성남시','수원시','시흥시','안산시','안성시','안양시','양주시','양평군','여주시','연천군','오산시','용인시','의왕시','의정부시','이천시','파주시','평택시','포천시','하남시','화성시'],'강원특별자치도':['강릉시','고성군','동해시','삼척시','속초시','양구군','양양군','영월군','원주시','인제군','정선군','철원군','춘천시','태백시','평창군','홍천군','화천군','횡성군'],'충청북도':['괴산군','단양군','보은군','영동군','옥천군','음성군','제천시','증평군','진천군','청주시','충주시'],'충청남도':['계룡시','공주시','금산군','논산시','당진시','보령시','부여군','서산시','서천군','아산시','예산군','천안시','청양군','태안군','홍성군'],'전북특별자치도':['고창군','군산시','김제시','남원시','무주군','부안군','순창군','완주군','익산시','임실군','장수군','전주시','정읍시','진안군'],'전라남도':['강진군','고흥군','곡성군','광양시','구례군','나주시','담양군','목포시','무안군','보성군','순천시','신안군','여수시','영광군','영암군','완도군','장성군','장흥군','진도군','함평군','해남군','화순군'],'경상북도':['경산시','경주시','고령군','구미시','김천시','문경시','봉화군','상주시','성주군','안동시','영덕군','영양군','영주시','영천시','예천군','울릉군','울진군','의성군','청도군','청송군','칠곡군','포항시'],'경상남도':['거제시','거창군','고성군','김해시','남해군','밀양시','사천시','산청군','양산시','의령군','진주시','창녕군','창원시','통영시','하동군','함안군','함양군','합천군'],'제주특별자치도':['서귀포시','제주시']};
+
+        const productCategories = [
+            { label: "System Pergola", items: ["STAY (수동)", "STAY (전동)", "Tone & Tone (수동)", "Tone & Tone (전동)", "AIREA", "OPERA", "ATHENA"] },
+            { label: "Solar Pergola", items: ["AIREA Solar", "OPERA Solar", "Solar Panel", "Solar Inverter"] },
+            { label: "Glass", items: ["Glass Sliding", "Glass Folding", "Basic Folding (일반)", "Basic Folding (단열)", "Fix Glass (일반)", "Fix Glass (단열)", "Glass Door (외도어)"] },
+            { label: "Wall Siding (LYRA)", items: ["LYRA Lepte", "LYRA Treis", "LYRA Treis LED"] },
+            { label: "Deck", items: ["Stone Deck (일반)", "Stone Deck (각관)"] }
+        ];
+
+        const stayPivots = { manual: [2600,2775,2950,3125,3300,3475,3650,3825,4000,4175,4350,4525,4700,4875,5050,5225,5400], electric: [2600,2775,2950,3125,3300,3475,3650,3825,4000,4175,4350,4525,4700,4875,5050,5225,5400,5575,5750,5925] };
+        const aireaPivots = [2100,2320,2540,2760,2980,3200,3420,3640,3860,4080,4300,4520,4740,4960,5180,5400,5620,5840,6060];
+        
+        const constructionPricesMap = {
+            "STAY": 1000000, "Tone & Tone": 1200000, "AIREA": 1200000, "AIREA Solar": 1400000,
+            "OPERA": 1400000, "OPERA Solar": 1600000, "Glass Sliding": 100000, "Glass Folding": 100000,
+            "Basic Folding": 100000, "Fix Glass": 50000, "Glass Door": 200000, "LYRA Set": 100000
+        };
+
+        const STORAGE_KEY = 'oska_quote_data_v2';
+        let autoSaveTimer = null;
+        let discountWarningShown = false;
+
+        // --- 2. 초기화 ---
+        document.addEventListener('DOMContentLoaded', () => {
+            initDate();
+            initRegions();
+            loadData() || initDefaultRows();
+            setupAutoSave();
+            switchTab(1);
+        });
+
+        function initDate() {
+            const today = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' });
+            document.getElementById('view-date-1').textContent = today;
+            document.getElementById('view-date-2').textContent = today;
+        }
+
+        function initRegions() {
+            const doSelect = document.getElementById('region-do');
+            let opts = '<option value="">시/도 선택</option>';
+            Object.keys(regions).forEach(r => opts += `<option value="${r}">${r}</option>`);
+            doSelect.innerHTML = opts;
+            doSelect.addEventListener('change', function() {
+                const siSelect = document.getElementById('region-si');
+                const val = this.value;
+                if(val && regions[val]) {
+                    let sOpts = '<option value="">시/군/구 선택</option>';
+                    regions[val].forEach(s => sOpts += `<option value="${s}">${s}</option>`);
+                    siSelect.innerHTML = sOpts;
+                    siSelect.disabled = false;
+                } else {
+                    siSelect.innerHTML = '<option value="">시/군/구</option>';
+                    siSelect.disabled = true;
+                }
+                updateRegionBasedCosts(val);
+                saveData();
+            });
+        }
+
+        function initDefaultRows() {
+            addRow();
+            addConsRow({ cat: "간접 공사비", name: "출장비", spec: "출장경비", price: 0 });
+            addConsRow({ cat: "자재 반입비", name: "운임", spec: "화물비", price: 0 });
+            addConsRow({ cat: "자재 반입비", name: "양중비", spec: "사다리차/스카이", price: 300000 });
+            addConsRow({ cat: "간접 공사비", name: "공과잡비", spec: "기타 경비", isPercent: true });
+            addConsRow({ cat: "간접 공사비", name: "감리비", spec: "기타 경비", isPercent: true });
+            const regionDo = document.getElementById('region-do').value;
+            if(regionDo) updateRegionBasedCosts(regionDo);
+        }
+
+        // --- 3. UI 제어 ---
+        function switchTab(num) {
+            const p1 = document.getElementById('page-1');
+            const p2 = document.getElementById('page-2');
+            const b1 = document.getElementById('nav-btn-1');
+            const b2 = document.getElementById('nav-btn-2');
+            const footerP1 = document.getElementById('footer-page-1');
+            const footerP2 = document.getElementById('footer-page-2');
+
+            if (num === 1) {
+                p1.classList.remove('hidden'); p2.classList.add('hidden');
+                b1.className = "flex-1 md:flex-none px-6 py-2.5 rounded-md text-sm font-bold shadow-sm bg-white text-gray-900 transition-all";
+                b2.className = "flex-1 md:flex-none px-6 py-2.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-900 transition-all";
+                if(footerP1) footerP1.classList.remove('hidden');
+                if(footerP1) footerP1.classList.add('flex');
+                if(footerP2) footerP2.classList.add('hidden');
+                if(footerP2) footerP2.classList.remove('flex');
+            } else {
+                syncCustomerInfo();
+                p1.classList.add('hidden'); p2.classList.remove('hidden');
+                b2.className = "flex-1 md:flex-none px-6 py-2.5 rounded-md text-sm font-bold shadow-sm bg-white text-gray-900 transition-all";
+                b1.className = "flex-1 md:flex-none px-6 py-2.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-900 transition-all";
+                if(footerP1) footerP1.classList.add('hidden');
+                if(footerP1) footerP1.classList.remove('flex');
+                if(footerP2) footerP2.classList.remove('hidden');
+                if(footerP2) footerP2.classList.add('flex');
+            }
+            window.scrollTo(0, 0);
+        }
+
+        function handleBranchChange() {
+            const sel = document.getElementById('branch-select');
+            const inp = document.getElementById('branch-input');
+            inp.classList.toggle('hidden', sel.value !== '직접입력');
+            calcTotal(); // 5% 자동 계산 포함
+            saveData();
+        }
+
+        function handleHandlerChange() {
+            const sel = document.getElementById('handler-select');
+            const inp = document.getElementById('handler-input');
+            inp.classList.toggle('hidden', sel.value !== '직접 입력');
+            saveData();
+        }
+
+        function syncCustomerInfo() {
+            const name = document.getElementById('cust-name').value;
+            const phone = document.getElementById('cust-phone').value;
+            const rDo = document.getElementById('region-do').value;
+            const rSi = document.getElementById('region-si').value;
+            const rDet = document.getElementById('cust-addr-detail').value;
+
+            document.getElementById('est-cust-name').textContent = name || '고객님';
+            document.getElementById('est-cust-phone').textContent = phone || '-';
+            document.getElementById('est-cust-addr').textContent = `${rDo} ${rSi} ${rDet}`.trim() || '-';
+            
+            const bSel = document.getElementById('branch-select');
+            const bInp = document.getElementById('branch-input');
+            const branch = bSel.value === '직접입력' ? bInp.value : bSel.value;
+            
+            const hSel = document.getElementById('handler-select');
+            const hInp = document.getElementById('handler-input');
+            const handler = hSel.value === '직접 입력' ? hInp.value : hSel.value;
+            
+            let fullHandler = handler;
+            if (branch && handler && !handler.includes(branch)) fullHandler = `${branch} ${handler}`;
+            document.getElementById('est-handler').textContent = fullHandler || '-';
+        }
+
+        function showWarningModal() { document.getElementById('discount-modal').classList.add('active'); }
+        function closeWarningModal() { document.getElementById('discount-modal').classList.remove('active'); }
+
+        // --- 4. 견적 계산 로직 ---
+        function formatNumber(num) { return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+        function parseNum(str) { return parseFloat(String(str).replace(/,/g, '')) || 0; }
+
+        function addRow() {
+            const tbody = document.getElementById('est-tbody');
+            const tr = document.createElement('tr');
+            let prodOpts = '<option value="">제품 선택</option>';
+            productCategories.forEach(cat => {
+                prodOpts += `<optgroup label="${cat.label}">`;
+                cat.items.forEach(item => prodOpts += `<option value="${item}">${item}</option>`);
+                prodOpts += `</optgroup>`;
+            });
+            tr.innerHTML = `
+                <td><input type="tel" class="excel-input text-center" placeholder="No"></td>
+                <td>
+                    <select class="excel-input" onchange="handleProdChange(this)">${prodOpts}</select>
+                    <input type="text" class="excel-input hidden" placeholder="직접 입력">
+                </td>
+                <td class="spec-cell"><input type="text" class="excel-input text-center" placeholder="규격"></td>
+                <td>
+                    <select class="excel-input text-center color-select" disabled onchange="calcRow(this)">
+                        <option value="">선택</option><option value="화이트">화이트</option><option value="차콜">차콜</option><option value="기타">기타(할증)</option>
+                    </select>
+                </td>
+                <td class="option-cell"><input type="text" class="excel-input" placeholder="옵션"></td>
+                <td><input type="text" class="excel-input text-center" value="식"></td>
+                <td><input type="tel" class="excel-input text-center qty" value="1" oninput="calcRow(this)"></td>
+                <td><input type="tel" class="excel-input text-right price" placeholder="0" oninput="handleManualPrice(this)"></td>
+                <td class="text-right px-2 font-medium"><span class="sum">0</span></td>
+                <td class="text-center hidden-on-print"><button onclick="delRow(this)" class="text-gray-400 hover:text-red-500 font-bold px-2">×</button></td>
+            `;
+            tbody.appendChild(tr);
+            saveData();
+        }
+
+        function handleProdChange(sel) {
+            const tr = sel.closest('tr');
+            const prodName = sel.value;
+            const specCell = tr.querySelector('.spec-cell');
+            const optionCell = tr.querySelector('.option-cell');
+            const colorSelect = tr.querySelector('.color-select');
+            
+            colorSelect.disabled = false;
+            colorSelect.value = '';
+            tr.querySelector('.price').value = '';
+            tr.querySelector('.price').dataset.basePrice = 0;
+            const customInput = sel.nextElementSibling;
+
+            if (prodName === 'custom' || prodName === '직접 입력') {
+                 sel.classList.add('hidden'); customInput.classList.remove('hidden'); customInput.focus();
+                 return;
+            } else {
+                 sel.classList.remove('hidden'); customInput.classList.add('hidden');
+            }
+
+            const otherOption = colorSelect.querySelector('option[value="기타"]');
+            if(prodName.includes("OPERA")) {
+                otherOption.textContent = "기타";
+            } else if(prodName.includes("AIREA") || prodName.includes("ATHENA")) {
+                otherOption.textContent = "기타 (+10%)";
+            } else if(prodName.includes("STAY") || prodName.includes("Tone") || prodName.includes("Glass") || prodName.includes("Folding") || prodName.includes("LYRA")) {
+                otherOption.textContent = "기타 (+15%)";
+                colorSelect.disabled = false;
+            } else {
+                otherOption.textContent = "기타 (할증)";
+                colorSelect.disabled = true; 
+            }
+
+            if (prodName.includes("STAY") || prodName.includes("Tone") || prodName.includes("AIREA") || prodName.includes("OPERA") || prodName.includes("ATHENA")) {
+                let isAirea = prodName.includes("AIREA") || prodName.includes("OPERA") || prodName.includes("ATHENA");
+                let pivots = isAirea ? aireaPivots : (prodName.includes("수동") ? stayPivots.manual : stayPivots.electric);
+                let pOpts = pivots.map(p => `<option value="${p}">${p}</option>`).join('');
+                let heightHtml = prodName.includes("ATHENA") ? '' : `<div class="flex items-center gap-1 mt-1"><span class="text-xs text-gray-500 w-8">H</span><select class="excel-input bg-gray-50" onchange="calcPergola(this)"><option value="3000">3000이하</option><option value="6000">6000이하(+100만)</option></select></div>`;
+                specCell.innerHTML = `
+                    <div class="flex flex-col gap-1">
+                        <div class="flex items-center gap-1"><span class="text-xs text-gray-500 w-8">Span</span><input type="tel" class="excel-input bg-gray-50 span-input" placeholder="mm" oninput="calcPergola(this)"></div>
+                        <div class="flex items-center gap-1"><span class="text-xs text-gray-500 w-8">Pivot</span><select class="excel-input bg-gray-50 pivot-select" onchange="calcPergola(this)"><option value="">선택</option>${pOpts}</select></div>
+                        ${heightHtml}
+                    </div>`;
+                let ledOpts = isAirea 
+                    ? `<label class="chk-wrap py-0"><input type="checkbox" class="opt-dual" onchange="calcRow(this)"> 듀얼라인등</label><label class="chk-wrap py-0"><input type="checkbox" class="opt-blade" onchange="calcRow(this)"> 블레이드</label>`
+                    : `<label class="chk-wrap py-0"><input type="checkbox" class="opt-led" onchange="calcRow(this)"> 싱글라인등</label>`;
+                optionCell.innerHTML = `
+                    <div class="flex flex-col gap-1 text-xs">
+                        ${ledOpts}
+                        <div class="flex items-center gap-1">
+                            <label class="chk-wrap py-0"><input type="checkbox" onchange="togglePillar(this)"> 기둥추가</label>
+                            <input type="tel" class="excel-input w-12 text-center bg-gray-50 opt-pillar" disabled placeholder="0" oninput="calcRow(this)">
+                        </div>
+                    </div>`;
+            } else if (prodName === "Solar Panel") {
+                 specCell.innerHTML = '<input type="text" class="excel-input text-center" value="180*1000" readonly>'; optionCell.innerHTML = '';
+            } else if (prodName === "Solar Inverter") {
+                 specCell.innerHTML = '<input type="text" class="excel-input text-center" value="자재시공일체" readonly>'; optionCell.innerHTML = '';
+            } else if (prodName === "Glass Sliding") {
+                 specCell.innerHTML = `<select class="excel-input text-center" onchange="calcRow(this)"><option value="2500">~2500mm</option><option value="2800">~2800mm</option></select>`; optionCell.innerHTML = `<input type="text" class="excel-input text-gray-500" value="시공비 일체" readonly>`;
+            } else if (prodName === "Glass Folding") {
+                 specCell.innerHTML = `<input type="text" class="excel-input text-center" value="H ~2500mm" readonly>`; optionCell.innerHTML = `<input type="text" class="excel-input text-gray-500" value="시공비 별도" readonly>`;
+            } else if (prodName.includes("Basic Folding")) {
+                 specCell.innerHTML = `<input type="text" class="excel-input text-center" value="H ~2500mm" readonly>`;
+                 if(prodName.includes("단열")) optionCell.innerHTML = '<input type="text" class="excel-input text-xs" value="시공비 별도, 열관리효율 1등급" readonly>';
+                 else optionCell.innerHTML = '<input type="text" class="excel-input" value="시공비 별도" readonly>';
+            } else if (prodName.includes("Fix Glass") || prodName.includes("Glass Door")) {
+                 specCell.innerHTML = '<input type="text" class="excel-input text-center" placeholder="규격 입력">'; optionCell.innerHTML = '<input type="text" class="excel-input text-gray-500" value="시공비 별도" readonly>';
+            } else if (prodName === "LYRA Lepte") {
+                 specCell.innerHTML = `<select class="excel-input text-center" onchange="calcRow(this)"><option value="3000">55*55*3000</option><option value="6000">55*55*6000</option></select>`; optionCell.innerHTML = '';
+            } else if (prodName === "LYRA Treis") {
+                 specCell.innerHTML = `<select class="excel-input text-center" onchange="calcRow(this)"><option value="3000">55*300*3000</option><option value="6000">55*300*6000</option></select>`; optionCell.innerHTML = '';
+            } else if (prodName === "LYRA Treis LED") {
+                 specCell.innerHTML = '<input type="text" class="excel-input text-center">'; optionCell.innerHTML = `<label class="chk-wrap py-0"><input type="checkbox" class="opt-wall-led" onchange="calcRow(this)"> LED 모듈</label>`;
+            } else if (prodName.includes("Stone Deck")) {
+                 specCell.innerHTML = '<input type="text" class="excel-input text-center" value="min 30m2" readonly>'; optionCell.innerHTML = '';
+            } else {
+                 specCell.innerHTML = `<input type="text" class="excel-input text-center" placeholder="규격">`;
+                 optionCell.innerHTML = `<input type="text" class="excel-input" placeholder="옵션">`;
+            }
+            calcRow(sel);
+        }
+
+        function togglePillar(chk) {
+            const inp = chk.closest('.option-cell').querySelector('.opt-pillar');
+            inp.disabled = !chk.checked;
+            if(!chk.checked) inp.value = '';
+            calcRow(chk);
+        }
+
+        function getSpanIndex(span) {
+            if (span <= 1000) return 0; if (span <= 1500) return 1; if (span <= 2000) return 2; if (span <= 2500) return 3; if (span <= 3000) return 4; if (span <= 3500) return 5; if (span <= 4000) return 6; return -1;
+        }
+
+        function calculatePergolaPrice(model, type, span, pivotVal) {
+            const sIdx = getSpanIndex(span); if (sIdx === -1) return 0;
+            let basePrice = 0; let pIdx = -1;
+            if (model.includes('AIREA') || model.includes('OPERA') || model.includes('ATHENA')) {
+                pIdx = aireaPivots.indexOf(parseInt(pivotVal)); if (pIdx === -1) return 0;
+                let base, sStep, pStep, k;
+                const isSolar = type === 'solar';
+                if (model.includes('AIREA') || model.includes('ATHENA')) {
+                    if (isSolar) { base = 10340000; sStep = 660000; pStep = 220000; k = 55000; } 
+                    else { base = 9400000; sStep = 600000; pStep = 200000; k = 50000; }
+                } else { 
+                    if (isSolar) { base = 15180000; sStep = 660000; pStep = 440000; k = 55000; } 
+                    else { base = 13800000; sStep = 600000; pStep = 400000; k = 50000; }
+                }
+                return base + (sIdx * sStep) + (pIdx * pStep) + (sIdx * pIdx * k);
+            } else {
+                const pivotList = type === 'manual' ? stayPivots.manual : stayPivots.electric;
+                pIdx = pivotList.indexOf(parseInt(pivotVal)); if (pIdx === -1) return 0;
+                if (model.includes('STAY')) basePrice = type === 'manual' ? 4100000 : 4600000;
+                else if (model.includes('Tone')) basePrice = type === 'manual' ? 7600000 : 8100000;
+                return basePrice + (pIdx * 100000) + (sIdx * 300000);
+            }
+        }
+
+        function calcPergola(el) {
+            const tr = el.closest('tr');
+            const prodName = tr.querySelector('td:nth-child(2) select').value;
+            const span = parseInt(tr.querySelector('.span-input')?.value) || 0;
+            const pivot = parseInt(tr.querySelector('.pivot-select')?.value) || 0;
+            const heightPlus = tr.querySelector('select[onchange="calcPergola(this)"]')?.value === '6000';
+            if (span > 0 && pivot > 0) {
+                let type = prodName.includes('전동') ? 'electric' : (prodName.includes('Solar') ? 'solar' : 'manual');
+                let base = calculatePergolaPrice(prodName, type, span, pivot);
+                if (heightPlus) base += 1000000;
+                tr.querySelector('.price').dataset.basePrice = base;
+                calcRow(el);
+            }
+        }
+
+        function calcRow(el) {
+            const tr = el.closest('tr');
+            const prodName = tr.querySelector('td:nth-child(2) select').value;
+            const priceInput = tr.querySelector('.price');
+            const specCell = tr.querySelector('.spec-cell');
+            let base = parseFloat(priceInput.dataset.basePrice) || 0;
+            
+            if (prodName === "Solar Panel") base = 60000; 
+            else if (prodName === "Solar Inverter") base = 2000000;
+            else if (prodName === "Glass Sliding") { base = specCell.querySelector('select')?.value === '2800' ? 700000 : 600000; }
+            else if (prodName === "Glass Folding") base = 450000;
+            else if (prodName === "Basic Folding (일반)") base = 350000;
+            else if (prodName === "Basic Folding (단열)") base = 550000;
+            else if (prodName.includes("Glass Door")) base = 800000;
+            else if (prodName === "Fix Glass (일반)") base = 170000;
+            else if (prodName === "Fix Glass (단열)") base = 300000;
+            else if (prodName.includes("Stone Deck (일반)")) base = 150000;
+            else if (prodName.includes("Stone Deck (각관)")) base = 200000;
+            else if (prodName === "LYRA Lepte") { base = specCell.querySelector('select')?.value==='6000'?150000:80000; }
+            else if (prodName === "LYRA Treis") { base = specCell.querySelector('select')?.value==='6000'?550000:300000; }
+            else if (prodName === "LYRA Treis LED") base = 100000;
+            
+            let addon = 0;
+            if (tr.querySelector('.opt-led')?.checked) addon += prodName.includes('수동') ? 1000000 : 500000;
+            if (tr.querySelector('.opt-dual')?.checked) addon += 1000000;
+            if (tr.querySelector('.opt-blade')?.checked) addon += 1000000;
+            if (tr.querySelector('.opt-wall-led')?.checked) addon += 500000;
+            if (tr.querySelector('.opt-pillar')?.value) addon += (parseInt(tr.querySelector('.opt-pillar').value)||0) * 500000;
+
+            const color = tr.querySelector('.color-select').value;
+            if (color === '기타') {
+                if (prodName.includes("AIREA") || prodName.includes("ATHENA")) {
+                    base = Math.round(base * 1.1);
+                } else if (!prodName.includes("OPERA")) {
+                    base = Math.round(base * 1.15);
+                }
+            }
+
+            const unitPrice = base + addon;
+            priceInput.value = unitPrice > 0 ? unitPrice : '';
+            const qty = parseNum(tr.querySelector('.qty').value);
+            tr.querySelector('.sum').textContent = formatNumber(unitPrice * qty);
+            syncDirectCosts();
+            saveData();
+        }
+
+        function handleManualPrice(inp) {
+            inp.dataset.basePrice = parseNum(inp.value);
+            calcRow(inp);
+        }
+
+        // --- 5. 시공비 및 합계 ---
+        function addConsRow(item = {}) {
+            const tbody = document.getElementById('cons-tbody');
+            const tr = document.createElement('tr');
+            const isPercent = item.isPercent || false;
+            tr.innerHTML = `
+                <td><input type="text" class="excel-input text-center" value="${item.cat||''}" placeholder="구분"></td>
+                <td>
+                    ${item.isProductSelect 
+                        ? `<select class="excel-input cons-prod-select" onchange="setConsPrice(this)"><option value="">선택</option>${Object.keys(constructionPricesMap).map(k=>`<option value="${k}">${k}</option>`).join('')}</select>` 
+                        : `<input type="text" class="excel-input ${isPercent?'bg-gray-50':''}" value="${item.name||''}" placeholder="항목명" ${isPercent?'readonly':''}>`}
+                </td>
+                <td><input type="text" class="excel-input" value="${item.spec||''}" placeholder="상세"></td>
+                <td><input type="text" class="excel-input text-center" value="식"></td>
+                <td><input type="tel" class="excel-input text-center c-qty" value="1" oninput="calcCons(this)" ${isPercent?'readonly':''}></td>
+                <td><input type="tel" class="excel-input text-right c-price" value="${item.price||0}" oninput="calcCons(this)" ${isPercent?'readonly':''}></td>
+                <td class="text-right px-2"><span class="c-sum">0</span></td>
+                <td class="text-center hidden-on-print"><button onclick="delRow(this)" class="text-gray-400 hover:text-red-500 font-bold px-2">×</button></td>
+            `;
+            tbody.appendChild(tr);
+            if(item.price || isPercent) calcCons(tr.querySelector('.c-qty'));
+            sortConsRows();
+        }
+
+        function sortConsRows() {
+            const tbody = document.getElementById('cons-tbody');
+            const rows = Array.from(tbody.rows);
+            const priority = {"직접 공사비":1, "자재 반입비":2, "간접 공사비":3};
+            rows.sort((a,b) => {
+                const catA = a.querySelector('td:nth-child(1) input').value.trim();
+                const catB = b.querySelector('td:nth-child(1) input').value.trim();
+                return (priority[catA]||99) - (priority[catB]||99);
+            });
+            rows.forEach(r => tbody.appendChild(r));
+        }
+
+        function addDirectConsRow() { addConsRow({ cat: '직접 공사비', spec: '인건비/부자재', isProductSelect: true }); }
+        function addMaterialTransportRow() { addConsRow({ cat: '자재 반입비', name: '운임/양중비', spec: '' }); }
+        function addIndirectConsRow() { addConsRow({ cat: '간접 공사비', name: '공과잡비', spec: '기타경비', isPercent: true }); }
+        function addConsRowBtn() { addConsRow({ cat: '', name: '', spec: '' }); } 
+
+        function setConsPrice(sel) {
+            const val = constructionPricesMap[sel.value] || 0;
+            const tr = sel.closest('tr');
+            tr.querySelector('.c-price').value = val;
+            tr.querySelector('td:nth-child(3) input').value = '인건비/부자재';
+            calcCons(sel);
+        }
+
+        function calcCons(el) {
+            const tr = el.closest('tr');
+            const qty = parseNum(tr.querySelector('.c-qty').value);
+            const price = parseNum(tr.querySelector('.c-price').value);
+            tr.querySelector('.c-sum').textContent = formatNumber(qty * price);
+            calcTotal(); // 항상 갱신
+        }
+
+        function syncDirectCosts() {
+            const counts = {};
+            document.querySelectorAll('#est-tbody tr').forEach(r => {
+                const prod = r.querySelector('td:nth-child(2) select').value;
+                const qty = parseNum(r.querySelector('.qty').value);
+                for(const k in constructionPricesMap) {
+                    if(prod.includes(k)) { counts[k] = (counts[k]||0) + qty; break; }
+                }
+            });
+            const consRows = document.querySelectorAll('#cons-tbody tr');
+            const usedKeys = new Set();
+            consRows.forEach(r => {
+                const sel = r.querySelector('.cons-prod-select');
+                if(sel && sel.value) {
+                    if(counts[sel.value]) {
+                        r.querySelector('.c-qty').value = counts[sel.value];
+                        calcCons(sel);
+                        usedKeys.add(sel.value);
+                    } else {
+                        r.remove();
+                    }
+                }
+            });
+            for(const k in counts) {
+                if(!usedKeys.has(k)) {
+                    addConsRow({ cat: '직접 공사비', spec: '인건비/부자재', isProductSelect: true });
+                    const rows = document.querySelectorAll('#cons-tbody tr');
+                    const target = Array.from(rows).find(r => r.querySelector('.cons-prod-select')?.value === "");
+                    if(target) {
+                        target.querySelector('.cons-prod-select').value = k;
+                        target.querySelector('.c-qty').value = counts[k];
+                        setConsPrice(target.querySelector('.cons-prod-select'));
+                    }
+                }
+            }
+        }
+
+        function updateRegionBasedCosts(region) {
+            let freight = 300000;
+            if (region.includes('제주')) freight = 1800000;
+            else if (['경상','부산','대구','울산','전라','광주','강원'].some(k=>region.includes(k))) freight = 500000;
+            else if (['충청','대전','세종'].some(k=>region.includes(k))) freight = 400000;
+            let travel = 0;
+            if (['경상','부산','대구','울산','전라','광주','강원','제주'].some(k=>region.includes(k))) travel = 500000;
+            else if (['충청','대전','세종'].some(k=>region.includes(k))) travel = 400000;
+            document.querySelectorAll('#cons-tbody tr').forEach(r => {
+                const name = r.querySelector('td:nth-child(2) input')?.value.trim();
+                if(name === '운임') { r.querySelector('.c-price').value = freight; calcCons(r.querySelector('.c-price')); }
+                if(name === '출장비') { r.querySelector('.c-price').value = travel; calcCons(r.querySelector('.c-price')); }
+            });
+        }
+
+        function updateRemarksForIndirectCosts(prodTotal) {
+            const remarksArea = document.getElementById('remarks-area');
+            let currentText = remarksArea.value;
+            const consRows = document.querySelectorAll('#cons-tbody tr');
+            let travelCost = 0;
+            
+            consRows.forEach(row => {
+                const nameInput = row.querySelector('td:nth-child(2) input');
+                const priceInput = row.querySelector('.c-price');
+                if (nameInput && nameInput.value.trim() === "출장비") {
+                    travelCost = parseFloat(priceInput.value) || 0;
+                }
+            });
+
+            const infoMsg = `※ 공과잡비 및 감리비 항목은 제품가액의 각 5%로 자동 산출되었습니다.`;
+            const travelMsg = `※ 출장비의 경우 본사 기준으로 책정되었으며 지역별 지사로 연결되는 경우 조정될 수 있습니다.`;
+            
+            currentText = currentText.replace(/※ 공과잡비 및 감리비 항목은 제품가액의 각 5%로 자동 산출되었습니다\.\n?/g, '');
+            currentText = currentText.replace(/※ 출장비의 경우 본사 기준으로 책정되었으며 지역별 지사로 연결되는 경우 조정될 수 있습니다\.\n?/g, '');
+            
+            currentText = currentText.trim();
+            
+            let newMsgs = [];
+            if (prodTotal > 0) newMsgs.push(infoMsg);
+            if (travelCost > 0) newMsgs.push(travelMsg);
+            
+            if (newMsgs.length > 0) {
+                if (currentText.length > 0) currentText += "\n\n";
+                currentText += newMsgs.join("\n");
+            }
+            remarksArea.value = currentText;
+        }
+
+        function calcTotal() {
+            let prodSum = 0;
+            document.querySelectorAll('#est-tbody tr').forEach(tr => {
+                const sum = parseNum(tr.querySelector('.sum').textContent);
+                prodSum += sum;
+            });
+
+            // 간접 공사비 업데이트 (5% 자동 계산 - 무조건 적용)
+            document.querySelectorAll('#cons-tbody tr').forEach(r => {
+                const nameInput = r.querySelector('td:nth-child(2) input');
+                const name = nameInput ? nameInput.value.trim() : '';
+                if(name === '공과잡비' || name === '감리비') {
+                    const priceInput = r.querySelector('.c-price');
+                    const price = Math.round(prodSum * 0.05);
+                    priceInput.value = price;
+                    const qty = parseFloat(r.querySelector('.c-qty').value) || 0;
+                    r.querySelector('.c-sum').textContent = formatNumber(price * qty);
+                }
+            });
+
+            let consSum = 0;
+            document.querySelectorAll('#cons-tbody .c-sum').forEach(s => consSum += parseNum(s.textContent));
+            const supply = prodSum + consSum;
+            const discount = parseNum(document.getElementById('val-discount').value);
+            const tax = Math.round((supply - discount) * 0.1);
+            
+            document.getElementById('val-prod-sum').textContent = formatNumber(prodSum);
+            document.getElementById('val-cons-sum').textContent = formatNumber(consSum);
+            document.getElementById('val-supply').textContent = formatNumber(supply);
+            document.getElementById('val-tax').textContent = formatNumber(tax);
+            document.getElementById('val-total').textContent = formatNumber(supply - discount + tax);
+            
+            updateRemarksForIndirectCosts(prodSum);
+            saveData();
+        }
+        
+        function formatDiscount(el) {
+            let val = el.value.replace(/,/g, '');
+            const numericVal = parseFloat(val) || 0;
+            const branchSelect = document.getElementById('branch-select');
+            if (branchSelect.value === '본사' && numericVal > 0 && !discountWarningShown) {
+                showWarningModal(); 
+                discountWarningShown = true;
+            } else if (numericVal === 0) { 
+                discountWarningShown = false; 
+            }
+            if(!isNaN(val) && val !== '') el.value = Number(val).toLocaleString(); else el.value = val;
+            calcTotal();
+        }
+
+        function delRow(btn) {
+            btn.closest('tr').remove();
+            syncDirectCosts();
+            calcTotal();
+        }
+
+        function setupAutoSave() {
+            document.querySelectorAll('input, select, textarea').forEach(el => {
+                el.addEventListener('input', () => {
+                    clearTimeout(autoSaveTimer);
+                    autoSaveTimer = setTimeout(saveData, 1000);
+                });
+            });
+        }
+
+        function saveData(manual = false) {
+            const inputs = {};
+            document.querySelectorAll('input[id], select[id], textarea[id]').forEach(el => inputs[el.id] = el.value);
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(inputs));
+            if(manual) alert('데이터가 저장되었습니다.');
+        }
+
+        function loadData() {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if(!saved) return false;
+            try {
+                const inputs = JSON.parse(saved);
+                for(const id in inputs) {
+                    const el = document.getElementById(id);
+                    if(el) el.value = inputs[id];
+                }
+                syncCustomerInfo();
+                const regionDo = document.getElementById('region-do').value;
+                if(regionDo) updateRegionBasedCosts(regionDo);
+                setTimeout(() => calcTotal(), 500); 
+                return true;
+            } catch(e) { return false; }
+        }
+        
+        function resetData() {
+            if(confirm("모든 데이터를 초기화하시겠습니까?")) {
+                localStorage.removeItem(STORAGE_KEY);
+                location.reload();
+            }
+        }
+
+        async function saveAsPDF() {
+            const overlay = document.getElementById('loading-overlay');
+            overlay.classList.remove('hidden'); overlay.classList.add('flex');
+            try {
+                const hidden = document.getElementById('pdf-hidden-container');
+                hidden.innerHTML = '';
+                const clone1 = document.getElementById('capture-area-1').cloneNode(true);
+                const clone2 = document.getElementById('capture-area-2').cloneNode(true);
+                [clone1, clone2].forEach(node => {
+                    node.querySelectorAll('input, select, textarea').forEach(el => {
+                        const span = document.createElement('span');
+                        if (el.type === 'checkbox') {
+                            span.innerHTML = el.checked ? '&#9745;' : '&#9744;';
+                            span.style.fontSize = '18px';
+                        } else {
+                            const val = el.tagName === 'SELECT' ? (el.options[el.selectedIndex]?.text || '') : el.value;
+                            span.textContent = val;
+                            span.style.fontWeight = '500';
+                            if(el.tagName === 'TEXTAREA') {
+                                span.style.whiteSpace = 'pre-wrap';
+                                span.style.display = 'block';
+                            }
+                        }
+                        el.parentNode.replaceChild(span, el);
+                    });
+                    node.querySelectorAll('button').forEach(b => b.remove());
+                    node.classList.add('pdf-mode');
+                });
+                hidden.appendChild(clone1); hidden.appendChild(clone2);
+                await new Promise(r => setTimeout(r, 500)); 
+                const doc = new window.jspdf.jsPDF('p', 'mm', 'a4');
+                const pageWidth = doc.internal.pageSize.getWidth();
+                const pageHeight = doc.internal.pageSize.getHeight();
+                const captureOpts = { scale: 2, width: 1600, windowWidth: 1600 };
+                const cvs1 = await html2canvas(clone1, captureOpts);
+                const imgData1 = cvs1.toDataURL('image/jpeg', 0.95);
+                const imgProps1 = doc.getImageProperties(imgData1);
+                const pdfHeight1 = (imgProps1.height * pageWidth) / imgProps1.width;
+                doc.addImage(imgData1, 'JPEG', 0, 0, pageWidth, pdfHeight1 > pageHeight ? pageHeight : pdfHeight1);
+                doc.addPage();
+                const cvs2 = await html2canvas(clone2, captureOpts);
+                const imgData2 = cvs2.toDataURL('image/jpeg', 0.95);
+                const imgProps2 = doc.getImageProperties(imgData2);
+                const pdfHeight2 = (imgProps2.height * pageWidth) / imgProps2.width;
+                doc.addImage(imgData2, 'JPEG', 0, 0, pageWidth, pdfHeight2 > pageHeight ? pageHeight : pdfHeight2);
+                const custNameRaw = document.getElementById('cust-name').value.trim();
+                const custName = custNameRaw || 'VIP';
+                const rDo = document.getElementById('region-do').value;
+                const rSi = document.getElementById('region-si').value;
+                const region = (rSi && rSi !== '시/군/구 선택') ? rSi : (rDo || '지역');
+                const phoneRaw = document.getElementById('cust-phone').value.replace(/[^0-9]/g, '');
+                const phoneLast4 = phoneRaw.length >= 4 ? phoneRaw.slice(-4) : '0000';
+                const d = new Date();
+                const dateStr = `${d.getFullYear().toString().slice(-2)}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+                const fileName = `OSQ_${custName}_${region}_${phoneLast4}_${dateStr}.pdf`;
+                doc.save(fileName);
+                
+                sendEmailJS();
+            } catch(e) {
+                alert('PDF 생성 실패: ' + e.message);
+            } finally {
+                overlay.classList.add('hidden');
+                document.getElementById('pdf-hidden-container').innerHTML = '';
+            }
+        }
+
+        function sendEmailJS() {
+            const serviceID = "service_a3gvyib";
+            const templateID = "template_nz7rtfr";
+
+            const bVal = document.getElementById('branch-select').value;
+            const bInp = document.getElementById('branch-input').value;
+            const finalBranch = (bVal === '직접입력' ? bInp : bVal) || '-';
+            const hVal = document.getElementById('handler-select').value;
+            const hInp = document.getElementById('handler-input').value;
+            const finalHandler = (hVal === '직접 입력' ? hInp : hVal) || '-';
+            const cName = document.getElementById('cust-name').value || '고객(미입력)';
+            const cPhone = document.getElementById('cust-phone').value || '-';
+            const rDo = document.getElementById('region-do').value;
+            const rSi = document.getElementById('region-si').value;
+            const rDet = document.getElementById('cust-addr-detail').value;
+            const fullAddr = `${rDo} ${rSi} ${rDet}`.trim() || '(주소 미입력)';
+            const iDate = document.getElementById('install-date').value || '-';
+
+            let fullText = "=====================================\n   [OSKA 스마트 견적 시스템 발송]   \n=====================================\n\n";
+            fullText += "■ 1. 담당자 및 고객 정보\n";
+            fullText += `- 지사/담당자: ${finalBranch} / ${finalHandler}\n`;
+            fullText += `- 고객명: ${cName}\n`;
+            fullText += `- 연락처: ${cPhone}\n`;
+            fullText += `- 주소: ${fullAddr}\n`;
+            fullText += `- 설치예정: ${iDate}\n\n`;
+
+            fullText += "■ 2. 현장 체크리스트 및 상담경로\n";
+            const checkHeaders = document.querySelectorAll('#capture-area-1 h4.bg-gray-100');
+            checkHeaders.forEach(header => {
+                const title = header.textContent.trim();
+                const container = header.nextElementSibling;
+                const checkedLabels = [];
+                if(container) {
+                    container.querySelectorAll('label.chk-wrap').forEach(label => {
+                        if(label.querySelector('input')?.checked) checkedLabels.push(label.textContent.trim());
+                    });
+                }
+                fullText += `- ${title}: ${checkedLabels.length > 0 ? checkedLabels.join(', ') : '(선택 없음)'}\n`;
+            });
+            const consultMemo = document.getElementById('consult-memo').value;
+            fullText += `\n[상담 메모]\n${consultMemo || '(메모 없음)'}\n\n`;
+
+            fullText += "■ 3. 견적서 상세 내역\n";
+            fullText += "<제품 항목>\n";
+            document.querySelectorAll('#est-tbody tr').forEach((tr, idx) => {
+                const prodName = tr.querySelector('td:nth-child(2) select')?.value || tr.querySelector('td:nth-child(2) input')?.value;
+                if(prodName) {
+                    const qty = tr.querySelector('.qty')?.value || '1';
+                    const sum = tr.querySelector('.sum')?.textContent || '0';
+                    fullText += `${idx+1}. ${prodName} : ${qty}개 / ${sum}원\n`;
+                }
+            });
+
+            fullText += "\n<시공 및 기타 비용>\n";
+            document.querySelectorAll('#cons-tbody tr').forEach(tr => {
+                const cat = tr.querySelector('td:nth-child(1) input')?.value || '';
+                const name = tr.querySelector('.cons-prod-select')?.value || tr.querySelector('td:nth-child(2) input')?.value || '';
+                const price = tr.querySelector('.c-sum')?.textContent || '0';
+                if(name) fullText += `- [${cat}] ${name} : ${price}원\n`;
+            });
+
+            const tPrice = document.getElementById('val-total').textContent;
+            fullText += "\n=====================================\n";
+            fullText += `최종 견적 금액: ₩${tPrice} (VAT포함)\n`;
+            fullText += "=====================================\n";
+
+            const templateParams = {
+                cust_name: cName,
+                cust_phone: cPhone,
+                address: fullAddr,
+                install_date: iDate,
+                total_price: "₩" + tPrice,
+                branch_info: `${finalBranch} ${finalHandler}`,
+                items_summary: fullText, 
+                message: fullText 
+            };
+
+            emailjs.send(serviceID, templateID, templateParams);
+        }
+
+        const MANAGER_PW = ['oska', '1234', 'admin'];
+        function openManagerLogin() {
+            document.getElementById('manager-pw').value = '';
+            document.getElementById('manager-login-modal').classList.add('active');
+            setTimeout(() => document.getElementById('manager-pw').focus(), 100);
+        }
+        function closeManagerLogin() { document.getElementById('manager-login-modal').classList.remove('active'); }
+        function checkManagerPassword() {
+            const pw = document.getElementById('manager-pw').value;
+            if (MANAGER_PW.includes(pw)) { closeManagerLogin(); renderManagerReport(); } 
+            else alert('비밀번호가 올바르지 않습니다.');
+        }
+        function closeManagerReport() { document.getElementById('manager-report-modal').classList.remove('active'); }
+
+        function renderManagerReport() {
+            const tbody = document.getElementById('manager-prod-tbody');
+            tbody.innerHTML = '';
+            let prodConsumerTotal = 0, prodSupplyTotal = 0, prodMarginTotal = 0;
+            
+            const pergolaKeywords = ["STAY", "Tone", "AIREA", "OPERA", "ATHENA"];
+
+            document.querySelectorAll('#est-tbody tr').forEach(tr => {
+                const prodName = tr.querySelector('td:nth-child(2) select')?.value || tr.querySelector('td:nth-child(2) input')?.value || '';
+                if (!prodName) return;
+
+                const isPergola = pergolaKeywords.some(key => prodName.includes(key));
+                if (!isPergola) return; 
+
+                const consumerPrice = parseNum(tr.querySelector('.sum').textContent);
+                if (consumerPrice > 0) {
+                    let supplyPrice = 0, margin = 0, rateText = "";
+                    
+                    if (prodName.includes("STAY")) { 
+                        margin = 1500000; supplyPrice = consumerPrice - margin; rateText = "고정마진"; 
+                    }
+                    else if (prodName.includes("Tone")) { 
+                        margin = 3000000; supplyPrice = consumerPrice - margin; rateText = "고정마진"; 
+                    }
+                    else { 
+                        supplyPrice = Math.round(consumerPrice * 0.6); margin = consumerPrice - supplyPrice; rateText = "60%"; 
+                    }
+                    
+                    if (supplyPrice < 0) { supplyPrice = 0; margin = consumerPrice; }
+                    
+                    prodConsumerTotal += consumerPrice; 
+                    prodSupplyTotal += supplyPrice; 
+                    prodMarginTotal += margin;
+                    
+                    tbody.insertAdjacentHTML('beforeend', `<tr><td class="px-4 py-3 font-medium text-gray-900">${prodName}</td><td class="px-4 py-3 text-right text-gray-600">${formatNumber(consumerPrice)}</td><td class="px-4 py-3 text-center text-xs bg-gray-50">${rateText}</td><td class="px-4 py-3 text-right font-bold text-blue-600">${formatNumber(supplyPrice)}</td><td class="px-4 py-3 text-right font-bold text-green-600">+${formatNumber(margin)}</td></tr>`);
+                }
+            });
+            
+            document.getElementById('mgr-prod-consumer-total').textContent = formatNumber(prodConsumerTotal);
+            document.getElementById('mgr-prod-supply-total').textContent = formatNumber(prodSupplyTotal);
+            document.getElementById('mgr-prod-margin-total').textContent = formatNumber(prodMarginTotal);
+            
+            const totalEst = parseNum(document.getElementById('val-total').textContent);
+            const consTotal = parseNum(document.getElementById('val-cons-sum').textContent);
+            const discount = parseNum(document.getElementById('val-discount').value);
+            
+            document.getElementById('mgr-total-est').textContent = formatNumber(totalEst);
+            document.getElementById('mgr-total-supply').textContent = formatNumber(prodSupplyTotal + consTotal) + " (별도)";
+            document.getElementById('mgr-total-margin').textContent = formatNumber(prodMarginTotal - discount);
+            
+            document.getElementById('manager-report-modal').classList.add('active');
+        }
+    </script>
+</body>
+</html>

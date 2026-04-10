@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>OSKA Feedback System</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- NanumSquare Font -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/moonspam/NanumSquare@2.0/nanumsquare.css">
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <!-- EmailJS SDK -->
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
+  <style>
+    body { font-family: 'NanumSquare', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    
+    .custom-focus:focus { border-color: #000; background-color: #fff; }
+    .input-error { border-color: #ef4444 !important; background-color: #fef2f2 !important; }
+    
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #e5e5e5; border-radius: 10px; }
+  </style>
+</head>
+
+<body class="bg-white text-neutral-900 selection:bg-neutral-200">
+
+  <div id="app" class="min-h-screen flex flex-col">
+    <!-- Navigation -->
+    <nav class="fixed w-full top-0 z-50 bg-white/80 backdrop-blur-md border-b border-neutral-100 h-16 flex items-center px-6 justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-8 h-8 bg-black text-white flex items-center justify-center text-lg font-black rounded-lg">O</div>
+        <span class="text-sm font-black tracking-[0.2em] uppercase">OSKA FEEDBACK</span>
+      </div>
+      <div class="hidden md:flex items-center gap-4">
+        <span class="text-[10px] text-neutral-400 font-bold uppercase tracking-widest">Internal Communication System</span>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="flex-1 pt-24 pb-20 max-w-2xl mx-auto px-6 w-full">
+      
+      <!-- Form View -->
+      <div id="formView" class="animate-fade-in space-y-8">
+        <header class="space-y-2">
+          <h1 class="text-3xl font-black tracking-tighter uppercase leading-none">문의 및 개선 요청</h1>
+          <p class="text-neutral-400 text-xs font-medium tracking-tight">지사 및 직원의 소중한 의견을 자유롭게 남겨주세요.</p>
+        </header>
+
+        <form id="feedbackForm" class="space-y-6" novalidate>
+          <!-- Branch & Author -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="space-y-1.5">
+              <label class="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1 flex items-center gap-1.5">
+                <i data-lucide="building-2" class="w-3 h-3"></i> Branch
+              </label>
+              <select id="branch" class="w-full h-12 px-4 bg-neutral-50 border border-neutral-200 rounded-xl font-bold text-neutral-800 outline-none transition-all appearance-none cursor-pointer text-sm custom-focus">
+                <option value="">지사를 선택해주세요</option>
+                <option value="본사">본사</option>
+                <option value="지사">지사</option>
+                <option value="대리점">대리점</option>
+                <option value="기타">기타</option>
+              </select>
+              <p id="branchError" class="hidden text-[10px] text-red-500 font-bold mt-1 ml-1 uppercase">지사를 선택해 주세요.</p>
+            </div>
+            <div class="space-y-1.5">
+              <label class="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1 flex items-center gap-1.5">
+                <i data-lucide="user" class="w-3 h-3"></i> Staff Name
+              </label>
+              <input type="text" id="author" placeholder="담당자 성함 입력" required class="w-full h-12 px-4 bg-neutral-50 border border-neutral-200 rounded-xl font-bold text-neutral-800 outline-none transition-all text-sm custom-focus" />
+              <p id="authorError" class="hidden text-[10px] text-red-500 font-bold mt-1 ml-1 uppercase">성함을 입력해 주세요.</p>
+            </div>
+          </div>
+
+          <!-- Category -->
+          <div class="space-y-3">
+            <label class="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1">Category</label>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2" id="categoryGrid">
+              <button type="button" data-value="system" class="category-btn flex flex-col items-center justify-center p-4 rounded-2xl border border-neutral-100 bg-white transition-all gap-2 group text-neutral-400">
+                <i data-lucide="settings" class="w-5 h-5 text-red-500"></i>
+                <span class="text-[10px] font-black whitespace-nowrap text-neutral-400 group-hover:text-neutral-900">시스템 오류</span>
+              </button>
+              <button type="button" data-value="improvement" class="category-btn flex flex-col items-center justify-center p-4 rounded-2xl border border-neutral-100 bg-white transition-all gap-2 group text-neutral-400">
+                <i data-lucide="lightbulb" class="w-5 h-5 text-amber-500"></i>
+                <span class="text-[10px] font-black whitespace-nowrap text-neutral-400 group-hover:text-neutral-900">기능 개선</span>
+              </button>
+              <button type="button" data-value="general" class="category-btn flex flex-col items-center justify-center p-4 rounded-2xl border border-neutral-100 bg-white transition-all gap-2 group text-neutral-400">
+                <i data-lucide="message-circle" class="w-5 h-5 text-blue-500"></i>
+                <span class="text-[10px] font-black whitespace-nowrap text-neutral-400 group-hover:text-neutral-900">일반 문의</span>
+              </button>
+              <button type="button" data-value="idea" class="category-btn flex flex-col items-center justify-center p-4 rounded-2xl border border-neutral-100 bg-white transition-all gap-2 group text-neutral-400">
+                <i data-lucide="check-circle" class="w-5 h-5 text-green-500"></i>
+                <span class="text-[10px] font-black whitespace-nowrap text-neutral-400 group-hover:text-neutral-900">아이디어</span>
+              </button>
+            </div>
+            <input type="hidden" id="category" value="">
+            <p id="categoryError" class="hidden text-[10px] text-red-500 font-bold mt-1 ml-1 uppercase">문의 유형을 선택해 주세요.</p>
+          </div>
+
+          <!-- Description -->
+          <div class="space-y-1.5">
+            <label class="text-[10px] font-black text-neutral-400 uppercase tracking-widest ml-1 flex items-center gap-1.5">
+              <i data-lucide="message-square" class="w-3 h-3"></i> Description
+            </label>
+            <textarea id="content" rows="8" required placeholder="내용을 상세히 입력해 주세요." class="w-full p-5 bg-neutral-50 border border-neutral-200 rounded-2xl font-bold text-neutral-800 outline-none transition-all text-sm resize-none leading-relaxed custom-focus"></textarea>
+            <p id="contentError" class="hidden text-[10px] text-red-500 font-bold mt-1 ml-1 uppercase">내용을 입력해 주세요.</p>
+          </div>
+
+          <!-- Submit Button -->
+          <button type="submit" id="submitBtn" class="w-full h-14 bg-black text-white rounded-2xl font-black uppercase tracking-widest hover:bg-neutral-800 active:scale-[0.98] transition-all text-sm flex items-center justify-center gap-3">
+            <i data-lucide="send" class="w-4 h-4"></i> Send Feedback
+          </button>
+        </form>
+      </div>
+
+      <!-- Success View -->
+      <div id="successView" class="hidden animate-fade-in flex flex-col items-center justify-center py-20 text-center space-y-6">
+        <div class="w-20 h-20 bg-black text-white flex items-center justify-center rounded-3xl shadow-xl animate-bounce">
+          <i data-lucide="check-circle" class="w-10 h-10"></i>
+        </div>
+        <div class="space-y-2">
+          <h2 class="text-3xl font-black tracking-tighter uppercase">전송 완료</h2>
+          <p class="text-neutral-400 text-sm font-medium">
+            작성해주신 소중한 의견이 본사 개발팀으로 전달되었습니다.<br/>
+            검토 후 시스템 업데이트 시 반영하도록 하겠습니다.
+          </p>
+        </div>
+        <button type="button" onclick="resetForm()" class="flex items-center gap-2 text-xs font-black text-neutral-400 hover:text-black transition-all uppercase tracking-widest pt-4">
+          <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> Back to Form
+        </button>
+      </div>
+    </main>
+
+    <!-- Footer Notice -->
+    <footer class="py-16 border-t border-neutral-100 bg-white">
+      <div class="max-w-xl mx-auto text-center px-4">
+        <div class="mb-6">
+          <span class="text-[10px] font-black text-red-600 tracking-widest uppercase border border-red-100 px-4 py-1.5 rounded-full bg-red-50">
+            INTERNAL USE ONLY – STRICTLY CONFIDENTIAL
+          </span>
+        </div>
+        <div class="text-[9px] text-neutral-400 font-bold leading-relaxed space-y-1 tracking-tight uppercase opacity-60">
+          <p>본 의견 접수는 오스카 지사 및 직원의 업무 효율 증진을 위해 운영됩니다.</p>
+          <p>COPYRIGHT © OSKA. ALL RIGHTS RESERVED.</p>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    // --- EmailJS 초기화 ---
+    (function() {
+        emailjs.init("Wee5GwKPwshYQEFty"); 
+    })();
+
+    lucide.createIcons();
+
+    const formView = document.getElementById('formView');
+    const successView = document.getElementById('successView');
+    const feedbackForm = document.getElementById('feedbackForm');
+    const categoryBtns = document.querySelectorAll('.category-btn');
+    const categoryInput = document.getElementById('category');
+    
+    const branchSelect = document.getElementById('branch');
+    const authorInput = document.getElementById('author');
+    const contentInput = document.getElementById('content');
+    
+    const branchError = document.getElementById('branchError');
+    const authorError = document.getElementById('authorError');
+    const categoryError = document.getElementById('categoryError');
+    const contentError = document.getElementById('contentError');
+
+    // Category Selection Logic
+    categoryBtns.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const value = btn.getAttribute('data-value');
+        categoryInput.value = value;
+        categoryError.classList.add('hidden');
+
+        categoryBtns.forEach(b => {
+          b.className = 'category-btn flex flex-col items-center justify-center p-4 rounded-2xl border border-neutral-100 bg-white transition-all gap-2 group text-neutral-400';
+          const icon = b.querySelector('svg, i');
+          const span = b.querySelector('span');
+          if (span) span.className = 'text-[10px] font-black whitespace-nowrap text-neutral-400 group-hover:text-neutral-900';
+          if (icon) {
+            const val = b.getAttribute('data-value');
+            if (val === 'system') icon.setAttribute('class', 'w-5 h-5 text-red-500');
+            else if (val === 'improvement') icon.setAttribute('class', 'w-5 h-5 text-amber-500');
+            else if (val === 'general') icon.setAttribute('class', 'w-5 h-5 text-blue-500');
+            else if (val === 'idea') icon.setAttribute('class', 'w-5 h-5 text-green-500');
+          }
+        });
+
+        btn.className = 'category-btn flex flex-col items-center justify-center p-4 rounded-2xl border border-black bg-black text-white transition-all gap-2 shadow-lg';
+        const activeIcon = btn.querySelector('svg, i');
+        const activeSpan = btn.querySelector('span');
+        if (activeIcon) activeIcon.setAttribute('class', 'w-5 h-5 text-white');
+        if (activeSpan) activeSpan.className = 'text-[10px] font-black whitespace-nowrap text-white';
+      });
+    });
+
+    // Form Submit (EmailJS Integration)
+    feedbackForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      
+      let hasError = false;
+      
+      // Branch Validation
+      if (!branchSelect.value) {
+        branchSelect.classList.add('input-error');
+        branchError.classList.remove('hidden');
+        hasError = true;
+      } else {
+        branchSelect.classList.remove('input-error');
+        branchError.classList.add('hidden');
+      }
+
+      // Author Validation
+      if (!authorInput.value.trim()) {
+        authorInput.classList.add('input-error');
+        authorError.classList.remove('hidden');
+        hasError = true;
+      } else {
+        authorInput.classList.remove('input-error');
+        authorError.classList.add('hidden');
+      }
+
+      // Category Validation
+      if (!categoryInput.value) {
+        categoryError.classList.remove('hidden');
+        hasError = true;
+      } else {
+        categoryError.classList.add('hidden');
+      }
+      
+      // Content Validation
+      if (!contentInput.value.trim()) {
+        contentInput.classList.add('input-error');
+        contentError.classList.remove('hidden');
+        hasError = true;
+      } else {
+        contentInput.classList.remove('input-error');
+        contentError.classList.add('hidden');
+      }
+      
+      if (hasError) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        return;
+      }
+      
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<div class="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>';
+
+      const templateParams = {
+        branch: branchSelect.value,
+        author: authorInput.value,
+        category: categoryInput.value,
+        content: contentInput.value,
+        timestamp: new Date().toLocaleString('ko-KR')
+      };
+
+      emailjs.send("service_orpsu12", "template_yn71m4h", templateParams)
+        .then(() => {
+          formView.classList.add('hidden');
+          successView.classList.remove('hidden');
+          window.scrollTo(0, 0);
+        })
+        .catch((error) => {
+          console.error('EmailJS Error:', error);
+          alert('메일 발송 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.');
+          submitBtn.disabled = false;
+          submitBtn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Send Feedback';
+          lucide.createIcons();
+        });
+    });
+
+    // Remove error highlights on input
+    branchSelect.addEventListener('change', () => {
+      if (branchSelect.value) {
+        branchSelect.classList.remove('input-error');
+        branchError.classList.add('hidden');
+      }
+    });
+
+    authorInput.addEventListener('input', () => {
+      if (authorInput.value.trim()) {
+        authorInput.classList.remove('input-error');
+        authorError.classList.add('hidden');
+      }
+    });
+
+    contentInput.addEventListener('input', () => {
+      if (contentInput.value.trim()) {
+        contentInput.classList.remove('input-error');
+        contentError.classList.add('hidden');
+      }
+    });
+
+    function resetForm() {
+      feedbackForm.reset();
+      categoryInput.value = "";
+      // Reset category buttons visual state
+      categoryBtns.forEach(b => {
+          b.className = 'category-btn flex flex-col items-center justify-center p-4 rounded-2xl border border-neutral-100 bg-white transition-all gap-2 group text-neutral-400';
+          const icon = b.querySelector('svg, i');
+          const span = b.querySelector('span');
+          if (span) span.className = 'text-[10px] font-black whitespace-nowrap text-neutral-400 group-hover:text-neutral-900';
+          if (icon) {
+            const val = b.getAttribute('data-value');
+            if (val === 'system') icon.setAttribute('class', 'w-5 h-5 text-red-500');
+            else if (val === 'improvement') icon.setAttribute('class', 'w-5 h-5 text-amber-500');
+            else if (val === 'general') icon.setAttribute('class', 'w-5 h-5 text-blue-500');
+            else if (val === 'idea') icon.setAttribute('class', 'w-5 h-5 text-green-500');
+          }
+      });
+      formView.classList.remove('hidden');
+      successView.classList.add('hidden');
+      document.getElementById('submitBtn').disabled = false;
+      document.getElementById('submitBtn').innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Send Feedback';
+      lucide.createIcons();
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,502 @@
+﻿<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>OSKA 스마트 통합 견적 시스템 v1.9</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- html2canvas & jsPDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- Google Fonts (Pretendard) -->
+    <link rel="stylesheet" as="style" crossorigin href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.8/dist/web/static/pretendard.css" />
+
+    <!-- [Patch] EmailJS SDK & Init -->
+    <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js"></script>
+    <script>
+        (function() {
+            // 전달받은 Public Key 적용
+            emailjs.init("Wee5GwKPwshYQEFty");
+        })();
+    </script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'oska-black': '#1a1a1a',
+                        'oska-white': '#f7f7f7',
+                        'oska-gray': '#333333',
+                        'oska-blue': '#2563eb',
+                        'oska-red': '#dc2626',
+                    },
+                    fontFamily: {
+                        sans: ['Pretendard', 'sans-serif'],
+                    },
+                    screens: {
+                        'print': {'raw': 'print'},
+                    }
+                }
+            }
+        };
+    </script>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="bg-gray-100 py-4 px-2 md:py-8 md:px-4 text-gray-800">
+
+    <!-- 할인 경고 모달 -->
+    <div id="discount-modal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold text-gray-900 mb-2">할인 적용 안내</h3>
+            <p class="text-sm text-gray-600 mb-6 leading-relaxed">지사와의 계약 관계상 본사는 특수한 경우를 제외하고 별도의 할인정책이 불가합니다.</p>
+            <button onclick="closeWarningModal()" class="w-full bg-oska-black text-white font-bold py-3 px-4 rounded hover:bg-gray-800">확인</button>
+        </div>
+    </div>
+
+    <!-- 관리자 로그인 모달 -->
+    <div id="manager-login-modal" class="modal-overlay">
+        <div class="modal-box">
+            <h3 class="text-lg font-bold text-gray-900 mb-4">🔐 관리자 접근</h3>
+            <p class="text-sm text-gray-500 mb-4">대리점 공급가 및 마진 확인을 위해 비밀번호를 입력하세요.</p>
+            <input type="password" id="manager-pw" class="input-base text-center mb-4 text-lg" placeholder="비밀번호 입력" onkeyup="if(event.key==='Enter') checkManagerPassword()">
+            <div class="flex gap-2">
+                <button onclick="closeManagerLogin()" class="flex-1 bg-gray-200 text-gray-700 font-bold py-3 rounded hover:bg-gray-300">취소</button>
+                <button onclick="checkManagerPassword()" class="flex-1 bg-oska-black text-white font-bold py-3 rounded hover:bg-gray-800">확인</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 관리자 리포트 모달 -->
+    <div id="manager-report-modal" class="modal-overlay">
+        <div class="modal-box large bg-white w-full max-h-[90vh] overflow-y-auto flex flex-col">
+            <div class="flex justify-between items-center mb-6 pb-4 border-b">
+                <h3 class="text-2xl font-black text-oska-black">📊 대리점 공급가 및 마진 분석</h3>
+                <button onclick="closeManagerReport()" class="text-gray-400 hover:text-black font-bold text-2xl">×</button>
+            </div>
+            
+            <div class="flex-grow overflow-auto">
+                <div class="mb-6">
+                    <h4 class="font-bold text-sm text-gray-500 mb-2">1. 제품 공급가 (본사 → 대리점)</h4>
+                    <div class="overflow-x-auto border rounded-lg">
+                        <table class="w-full text-sm text-left">
+                            <thead class="bg-gray-100 text-gray-600 uppercase text-xs">
+                                <tr>
+                                    <th class="px-4 py-3">품명</th>
+                                    <th class="px-4 py-3 text-right">소비자 판매가</th>
+                                    <th class="px-4 py-3 text-center">공급율</th>
+                                    <th class="px-4 py-3 text-right text-blue-600">본사 공급가</th>
+                                    <th class="px-4 py-3 text-right text-green-600">대리점 마진</th>
+                                </tr>
+                            </thead>
+                            <tbody id="manager-prod-tbody" class="divide-y divide-gray-200">
+                                <!-- JS로 생성됨 -->
+                            </tbody>
+                            <tfoot class="bg-gray-50 font-bold">
+                                <tr>
+                                    <td class="px-4 py-3">파고라 합계</td>
+                                    <td class="px-4 py-3 text-right" id="mgr-prod-consumer-total">0</td>
+                                    <td class="px-4 py-3 text-center">-</td>
+                                    <td class="px-4 py-3 text-right text-blue-600" id="mgr-prod-supply-total">0</td>
+                                    <td class="px-4 py-3 text-right text-green-600" id="mgr-prod-margin-total">0</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                    <p class="text-xs text-red-500 mt-2 font-medium">* 해당 페이지는 파고라 제품군의 원가 및 수익 분석을 위해 최적화되어 있습니다.</p>
+                </div>
+
+                <div>
+                    <h4 class="font-bold text-sm text-gray-500 mb-2">2. 예상 수익 요약</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-gray-50 p-4 rounded-lg border">
+                            <div class="text-xs text-gray-500 mb-1">총 견적 금액 (VAT포함)</div>
+                            <div class="text-xl font-bold text-gray-800" id="mgr-total-est">0</div>
+                        </div>
+                        <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                            <div class="text-xs text-blue-500 mb-1">본사 입금액 (예상)</div>
+                            <div class="text-xl font-bold text-blue-700" id="mgr-total-supply">0</div>
+                        </div>
+                        <div class="bg-green-50 p-4 rounded-lg border border-green-100">
+                            <div class="text-xs text-green-500 mb-1">대리점 총 수익 (예상)</div>
+                            <div class="text-xl font-bold text-green-700" id="mgr-total-margin">0</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mt-8 pt-4 border-t flex justify-end">
+                <button onclick="closeManagerReport()" class="bg-oska-black text-white px-6 py-2.5 rounded font-bold hover:bg-gray-800">닫기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 로딩 오버레이 -->
+    <div id="loading-overlay" class="fixed inset-0 bg-white/90 z-[10000] hidden flex-col justify-center items-center backdrop-blur-sm">
+        <div class="spinner"></div>
+        <div class="text-xl font-bold text-gray-800">PDF 생성 중...</div>
+        <div class="text-sm text-gray-500 mt-2">잠시만 기다려주세요.</div>
+    </div>
+
+    <!-- 상단 네비게이션 -->
+    <nav class="w-full max-w-[1400px] mx-auto mb-6 bg-white p-4 rounded-xl shadow-sm flex flex-col md:flex-row justify-between items-center gap-4">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 bg-oska-black rounded-lg flex items-center justify-center text-white font-bold text-xl">O</div>
+            <div>
+                <h1 class="text-xl font-bold text-gray-900 leading-tight">OSKA Smart Quotation</h1>
+                <p class="text-xs text-gray-500">통합 견적 관리 시스템</p>
+            </div>
+        </div>
+        
+        <div class="flex bg-gray-100 p-1 rounded-lg w-full md:w-auto">
+            <button onclick="switchTab(1)" id="nav-btn-1" class="flex-1 md:flex-none px-6 py-2.5 rounded-md text-sm font-bold transition-all shadow-sm bg-white text-gray-900">상담 시트</button>
+            <button onclick="switchTab(2)" id="nav-btn-2" class="flex-1 md:flex-none px-6 py-2.5 rounded-md text-sm font-medium text-gray-500 hover:text-gray-900 transition-all">견적서 작성</button>
+        </div>
+
+        <div class="flex gap-2">
+            <button onclick="saveData(true)" class="text-xs font-medium text-gray-500 hover:text-blue-600 px-3 py-2 border rounded hover:bg-blue-50 transition-colors">저장</button>
+            <button onclick="resetData()" class="text-xs font-medium text-gray-500 hover:text-red-600 px-3 py-2 border rounded hover:bg-red-50 transition-colors">초기화</button>
+        </div>
+    </nav>
+
+    <!-- 메인 컨텐츠 영역 -->
+    <main class="w-full max-w-[1400px] mx-auto bg-white rounded-xl shadow-sm overflow-hidden min-h-[800px] relative">
+        
+        <!-- PAGE 1: 상담 시트 -->
+        <div id="page-1" class="fade-in">
+            <div id="capture-area-1" class="capture-area">
+                <!-- 헤더 -->
+                <div class="flex flex-col md:flex-row justify-between items-end border-b-4 border-black pb-6 mb-8 gap-4">
+                    <div>
+                        <h2 class="text-4xl font-extrabold text-oska-black tracking-tight">CONSULTATION SHEET</h2>
+                        <p class="text-gray-500 mt-2 font-medium">오스카 프리미엄 아웃도어 솔루션 상담 기록</p>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm text-gray-500 mb-1">Date</div>
+                        <div id="view-date-1" class="font-bold text-2xl text-oska-black"></div>
+                        <!-- [v1.9] 상담시트 버전 레이블 추가 -->
+                        <div class="text-[10px] text-gray-400 mt-1 tracking-wide">2026 OSKA SMART Quotation ver1.9</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-12 gap-10">
+                    <!-- 왼쪽 컬럼 (담당자/고객정보) -->
+                    <div class="lg:col-span-4 space-y-8 lg:border-r lg:border-gray-100 lg:pr-8">
+                        <section>
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-oska-black rounded-full"></span>담당자 정보</h3>
+                            <div class="space-y-4 bg-gray-50 p-5 rounded-lg border border-gray-100">
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Branch / 지사<span class="text-red-500 ml-1">*</span></label>
+                                    <select id="branch-select" class="input-base" onchange="handleBranchChange()">
+                                        <option value="">지사 선택</option>
+                                        <option value="본사">본사</option>
+                                        <option value="강북지사">강북지사</option>
+                                        <option value="강남지사">강남지사</option>
+                                        <option value="강동지사">강동지사</option>
+                                        <option value="경상지사">경상지사</option>
+                                        <option value="전라(제주)지사">전라(제주)지사</option>
+                                        <option value="직접입력">직접 입력</option>
+                                    </select>
+                                    <input type="text" id="branch-input" class="input-base mt-2 hidden" placeholder="지사명 입력">
+                                </div>
+                                <div>
+                                    <label class="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Manager / 담당자<span class="text-red-500 ml-1">*</span></label>
+                                    <select id="handler-select" class="input-base" onchange="handleHandlerChange()">
+                                        <option value="">담당자 선택</option>
+                                        <option value="본사 이한울 이사">본사 이한울 이사</option>
+                                        <option value="본사 김선준 실장">본사 김선준 실장</option>
+                                        <option value="본사 장윤서 프로">본사 장윤서 프로</option>
+                                        <option value="강북지사 이범호 이사">강북지사 이범호 이사</option>
+                                        <option value="강남지사 백원준 이사">강남지사 백원준 이사</option>
+                                        <option value="강동지사 이호남 이사">강동지사 이호남 이사</option>
+                                        <option value="경남지사 이주훈 이사">경남지사 이주훈 이사</option>
+                                        <option value="전라제주지사 이우경 이사">전라제주지사 이우경 이사</option>
+                                        <option value="직접 입력">직접 입력</option>
+                                    </select>
+                                    <input type="text" id="handler-input" class="input-base mt-2 hidden" placeholder="담당자명 입력">
+                                </div>
+                            </div>
+                        </section>
+
+                        <section>
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-oska-black rounded-full"></span>고객 정보</h3>
+                            <div class="space-y-3">
+                                <div class="grid grid-cols-3 gap-2 items-center">
+                                    <span class="text-sm font-bold text-gray-600">고객명</span>
+                                    <input type="text" id="cust-name" class="input-base col-span-2" placeholder="성함 입력">
+                                </div>
+                                <div class="grid grid-cols-3 gap-2 items-center">
+                                    <span class="text-sm font-bold text-gray-600">연락처<span class="text-red-500 ml-1">*</span></span>
+                                    <div class="col-span-2">
+                                        <input type="tel" id="cust-phone" class="input-base" placeholder="010-0000-0000" oninput="formatPhoneNumber(this)" maxlength="13">
+                                        <!-- [v1.9] 허위 번호 경고 레이블 -->
+                                        <div id="phone-warn" class="text-[11px] text-red-500 mt-1 font-medium hidden">연락처가 올바르지 않거나 허위 번호일 가능성이 높습니다.</div>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-3 gap-2 items-start pt-2">
+                                    <span class="text-sm font-bold text-gray-600 mt-2">주소<span class="text-red-500 ml-1">*</span></span>
+                                    <div class="col-span-2 space-y-2">
+                                        <div class="grid grid-cols-2 gap-2">
+                                            <select id="region-do" class="input-base"><option value="">시/도</option></select>
+                                            <select id="region-si" class="input-base" disabled><option value="">시/군/구</option></select>
+                                        </div>
+                                        <input type="text" id="cust-addr-detail" class="input-base" placeholder="상세주소">
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-3 gap-2 items-center pt-2">
+                                    <span class="text-sm font-bold text-gray-600">예상 설치일</span>
+                                    <input type="date" id="install-date" class="input-base col-span-2">
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+
+                    <!-- 중앙/우측 컬럼 (체크리스트 & 메모) -->
+                    <div class="lg:col-span-8 flex flex-col gap-8">
+                        <section>
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-oska-black rounded-full"></span>현장 체크리스트</h3>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 bg-white rounded-xl">
+                                <!-- 항목 1 -->
+                                <div>
+                                    <h4 class="text-xs font-bold text-gray-500 mb-2 uppercase bg-gray-100 p-2 rounded inline-block">상담 경로</h4>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="chk-wrap"><input type="checkbox"> 유선 상담</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 현장 방문</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 쇼룸 내방</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 박람회</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 지인/소개</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 기타</label>
+                                    </div>
+                                </div>
+                                <!-- 항목 2 -->
+                                <div>
+                                    <h4 class="text-xs font-bold text-gray-500 mb-2 uppercase bg-gray-100 p-2 rounded inline-block">고객 유형</h4>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="chk-wrap"><input type="checkbox"> B2C (일반)</label>
+                                        <label class="chk-wrap"><input type="checkbox"> B2B (기업)</label>
+                                        <label class="chk-wrap"><input type="checkbox"> B2G (관공서)</label>
+                                        <label class="chk-wrap"><input type="checkbox"> B2D (대리점)</label>
+                                        <label class="chk-wrap"><input type="checkbox"> B to E (수출)</label>
+                                    </div>
+                                </div>
+                                <!-- 항목 3 -->
+                                <div>
+                                    <h4 class="text-xs font-bold text-gray-500 mb-2 uppercase bg-gray-100 p-2 rounded inline-block">기술 행정 지원</h4>
+                                    <div class="flex flex-col gap-2">
+                                        <label class="chk-wrap"><input type="checkbox"> 설계(도면)지원</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 디자인(랜더) 지원</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 가설 건축물 신고 보조</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 설치 안심 구독 서비스 (KESIA)</label>
+                                    </div>
+                                </div>
+                                <!-- 항목 4 -->
+                                <div>
+                                    <h4 class="text-xs font-bold text-gray-500 mb-2 uppercase bg-gray-100 p-2 rounded inline-block">현장 바닥(하지) 상황</h4>
+                                    <div class="grid grid-cols-2 gap-2">
+                                        <label class="chk-wrap"><input type="checkbox"> 목재 데크</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 석재 데크</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 콘크리트</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 흙/잔디</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 옥상 방수층</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 기타</label>
+                                    </div>
+                                </div>
+                                <!-- 항목 5 -->
+                                <div class="md:col-span-2">
+                                    <h4 class="text-xs font-bold text-gray-500 mb-2 uppercase bg-gray-100 p-2 rounded inline-block">시공 환경 확인</h4>
+                                    <div class="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                        <label class="chk-wrap"><input type="checkbox"> 전기 작업 가능</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 사다리차 진입 가능</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 스카이 장비 진입</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 엘리베이터 이용</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 현장 사진 제공</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 현장 도면 제공</label>
+                                        <label class="chk-wrap"><input type="checkbox"> 처마 높이 확인</label>
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section class="flex-grow flex flex-col">
+                            <h3 class="font-bold text-lg mb-4 flex items-center gap-2"><span class="w-1.5 h-6 bg-oska-black rounded-full"></span>상담 메모</h3>
+                            <div class="flex-grow relative">
+                                <textarea id="consult-memo" class="w-full h-48 md:h-full p-6 bg-[#fffdeb] border border-yellow-200 rounded-lg resize-none focus:ring-2 focus:ring-yellow-400 focus:outline-none text-sm leading-relaxed" placeholder="고객의 요청사항, 특이사항, 제품 옵션(컬러, 사이즈) 등을 자유롭게 기록하세요."></textarea>
+                                <div class="absolute top-2 right-2 text-yellow-600/20 pointer-events-none">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                </div>
+
+                <!-- 하단 유의사항 -->
+                <div class="mt-12 pt-8 border-t border-gray-200">
+                    <h4 class="font-bold text-sm text-gray-900 mb-3">[가견적 유의사항]</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-2 text-xs text-gray-500 leading-relaxed">
+                        <p><span class="font-bold text-gray-700">• 가견적 안내:</span> 본 견적서는 상담 편의를 위한 '가견적서(Preliminary Quote)'입니다. 정확한 견적은 현장 방문 및 실측 후 현장 여건(설치 난이도, 마감재 등)에 따라 변동될 수 있습니다.</p>
+                        <p><span class="font-bold text-gray-700">• 산출 기준:</span> 본 견적 금액은 별도의 설계비가 포함되지 않은 '납품/실행가' 기준으로 작성되었습니다. 추후 상세 도면 설계나 사양 변경 요청 시 견적 금액이 조정될 수 있습니다.</p>
+                        <p><span class="font-bold text-gray-700">• 결제 조건:</span> 제품가액(자재비)은 완납 조건이며, 시공비는 공사 종료 후 즉시 지급 조건입니다. (VAT 별도)</p>
+                        <p><span class="font-bold text-gray-700">• 별도 공사:</span> 1차 전기 인입 및 바닥 기초 토목/보강 공사 등은 견적 외 별도 사항입니다.</p>
+                        <p><span class="font-bold text-gray-700">• 장비 비용:</span> 견적 시 반영하지 않은 현장 진입 여건에 따른 양중 장비(크레인, 스카이 등) 사용료는 실비 청구됩니다.</p>
+                        <p><span class="font-bold text-gray-700">• 현장 인력:</span> 건설 현장 등 특수 상황에서 사다리 보조, 안전 감시, 또는 정규 편성 인원 외 추가 인력 투입이 필요한 경우 별도 비용이 발생할 수 있습니다.</p>
+                        <p><span class="font-bold text-gray-700">• 철회 불가:</span> 본 제품은 주문 제작(Custom-made) 특성상 발주 후 단순 변심에 의한 취소 및 반품이 불가합니다.</p>
+                    </div>
+                </div>
+                
+                <div class="absolute bottom-6 right-8 text-oska-black font-black text-5xl opacity-5 pointer-events-none tracking-tighter">OSKA</div>
+            </div>
+        </div>
+
+        <!-- PAGE 2: 견적서 -->
+        <div id="page-2" class="hidden fade-in">
+            <div id="capture-area-2" class="capture-area">
+                <!-- 견적서 헤더 -->
+                <div class="flex flex-col md:flex-row justify-between items-start mb-8 pb-6 border-b-2 border-oska-black gap-4">
+                    <div>
+                        <span class="text-xs font-bold text-oska-blue tracking-[0.2em] uppercase mb-1 block">Premium Outdoor Solution</span>
+                        <h1 class="text-4xl md:text-5xl font-black text-oska-black tracking-tight">QUOTATION</h1>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-sm font-bold text-gray-500">Estimate Date</div>
+                        <div id="view-date-2" class="text-2xl font-bold text-oska-black tabular-nums"></div>
+                        <!-- [v1.9] 버전 레이블 -->
+                        <div class="text-[10px] text-gray-400 mt-1 tracking-wide">2026 OSKA SMART Quotation ver1.9</div>
+                    </div>
+                </div>
+
+                <!-- 공급자/발주자 정보 -->
+                <div class="flex flex-col md:flex-row border border-gray-300 rounded-lg overflow-hidden mb-10 text-sm">
+                    <div class="w-full md:w-1/2 p-6 border-b md:border-b-0 md:border-r border-gray-300 bg-white">
+                        <h3 class="font-bold text-gray-400 mb-4 text-xs uppercase tracking-wider">Supplier (공급자)</h3>
+                        <dl class="grid grid-cols-[80px_1fr] gap-y-3">
+                            <dt class="text-gray-500">상호</dt><dd class="font-bold text-lg text-gray-900">(주)오스카</dd>
+                            <dt class="text-gray-500">담당자</dt><dd id="est-handler" class="font-medium">-</dd>
+                            <dt class="text-gray-500">연락처</dt><dd id="est-supplier-phone" class="font-medium">1800-5945</dd>
+                        </dl>
+                    </div>
+                    <div class="w-full md:w-1/2 p-6 bg-gray-50/50">
+                        <h3 class="font-bold text-gray-400 mb-4 text-xs uppercase tracking-wider">Customer (발주자)</h3>
+                        <dl class="grid grid-cols-[80px_1fr] gap-y-3">
+                            <dt class="text-gray-500">성함</dt><dd id="est-cust-name" class="font-bold text-lg text-gray-900">-</dd>
+                            <dt class="text-gray-500">연락처</dt><dd id="est-cust-phone" class="font-medium">-</dd>
+                            <dt class="text-gray-500">현장주소</dt><dd id="est-cust-addr" class="font-medium break-keep">-</dd>
+                        </dl>
+                    </div>
+                </div>
+
+                <!-- 1. 제품 상세 내역 -->
+                <div class="section-header">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    1. 제품 상세 내역 (Product Details)
+                </div>
+                <div class="mb-8">
+                    <div class="table-wrapper">
+                        <table class="excel-table">
+                            <colgroup><col width="50"><col width="180"><col width="160"><col width="100"><col width="180"><col width="50"><col width="50"><col width="100"><col width="120"><col width="50" class="hidden-on-print"></colgroup>
+                            <thead>
+                                <tr><th>No</th><th>품명</th><th>규격(Span)</th><th>색상</th><th>옵션</th><th>단위</th><th>수량</th><th>단가</th><th>공급가액</th><th class="hidden-on-print">삭제</th></tr>
+                            </thead>
+                            <tbody id="est-tbody"></tbody>
+                        </table>
+                    </div>
+                    <button onclick="addRow()" class="hidden-on-print w-full py-3 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-oska-blue hover:text-oska-blue hover:bg-blue-50 transition-all font-bold text-sm flex items-center justify-center gap-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        제품 항목 추가
+                    </button>
+                </div>
+
+                <!-- 2. 시공 및 부대 비용 -->
+                <div class="section-header">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    2. 시공 및 기타 부대비용
+                </div>
+                <div class="mb-8">
+                    <div class="table-wrapper">
+                        <table class="excel-table">
+                            <colgroup><col width="150"><col width="200"><col width="200"><col width="50"><col width="50"><col width="120"><col width="120"><col width="50" class="hidden-on-print"></colgroup>
+                            <thead>
+                                <tr><th>구분</th><th>항목명</th><th>상세내용</th><th>단위</th><th>수량</th><th>단가</th><th>공급가액</th><th class="hidden-on-print">삭제</th></tr>
+                            </thead>
+                            <tbody id="cons-tbody"></tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="hidden-on-print grid grid-cols-2 md:grid-cols-4 gap-2">
+                        <button onclick="addDirectConsRow()" class="py-2.5 px-3 rounded border border-gray-200 bg-white text-gray-700 font-bold text-xs hover:bg-gray-50 transition-colors">+ 직접공사비</button>
+                        <button onclick="addMaterialTransportRow()" class="py-2.5 px-3 rounded border border-gray-200 bg-white text-gray-700 font-bold text-xs hover:bg-gray-50 transition-colors">+ 자재 반입비</button>
+                        <button onclick="addIndirectConsRow()" class="py-2.5 px-3 rounded border border-gray-200 bg-white text-gray-700 font-bold text-xs hover:bg-gray-50 transition-colors">+ 간접공사비</button>
+                        <button onclick="addConsRow()" class="py-2.5 px-3 rounded border border-gray-200 bg-white text-gray-700 font-bold text-xs hover:bg-gray-50 transition-colors">+ 기타 항목</button>
+                    </div>
+                </div>
+
+                <!-- 하단 합계 및 비고 -->
+                <div class="flex flex-col lg:flex-row gap-8">
+                    <div class="w-full lg:w-2/3">
+                        <div class="border border-gray-300 rounded-lg p-5 h-full bg-white shadow-sm">
+                            <h4 class="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">Note / Remarks (특이사항)</h4>
+                            <textarea id="remarks-area" class="w-full h-32 text-sm resize-none focus:outline-none leading-relaxed text-gray-700" placeholder="납기일, 배송 조건, 현장 특이사항 등을 입력하세요."></textarea>
+                        </div>
+                    </div>
+                    <div class="w-full lg:w-1/3">
+                        <div class="bg-gray-50 rounded-lg p-6 border border-gray-200">
+                            <table class="w-full text-sm">
+                                <tr class="text-gray-500"><td class="py-1">제품 합계</td><td class="text-right tabular-nums" id="val-prod-sum">0</td></tr>
+                                <tr class="text-gray-500 border-b border-gray-200"><td class="py-1 pb-3">시공/기타 합계</td><td class="text-right pb-3 tabular-nums" id="val-cons-sum">0</td></tr>
+                                <tr class="text-gray-800 font-bold"><td class="py-3">총 공급가액</td><td class="text-right tabular-nums text-base" id="val-supply">0</td></tr>
+                                <tr class="text-red-500"><td class="py-2 font-medium">할인 (Discount)</td><td class="text-right"><input type="tel" id="val-discount" class="text-right bg-transparent border-b border-red-200 w-24 text-red-600 font-bold focus:outline-none focus:border-red-500" placeholder="0" oninput="formatDiscount(this)"></td></tr>
+                                <tr class="text-gray-500 border-b border-gray-200"><td class="py-2 pb-4">부가세 (VAT)</td><td class="text-right pb-4 tabular-nums" id="val-tax">0</td></tr>
+                                <tr class="text-oska-black"><td class="pt-4 text-lg font-extrabold">총 견적금액</td><td class="pt-4 text-right text-3xl font-black text-oska-red tracking-tight tabular-nums">₩ <span id="val-total">0</span></td></tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="mt-12 text-center">
+                    <div class="inline-block px-4 py-2 border border-gray-200 rounded-full text-[10px] text-gray-400">
+                        (주)오스카 | 대표: 이한울 | 사업자번호: 519-88-01710 | 경기도 평택시 오성면 오성서로 5-9
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 하단 액션 버튼 -->
+        <div class="sticky bottom-0 bg-white/95 backdrop-blur border-t border-gray-200 p-4 flex justify-center gap-4 z-50">
+            <!-- 1페이지 하단: 견적서 작성 버튼 -->
+            <div id="footer-page-1" class="w-full flex justify-center">
+                <button onclick="switchTab(2)" class="btn-action bg-oska-black text-white hover:bg-gray-800 shadow-lg shadow-gray-200 w-full md:w-auto min-w-[200px] text-lg">
+                    견적서 작성하기 <span class="ml-2 text-sm">▶</span>
+                </button>
+            </div>
+
+            <!-- 2페이지 하단: 기존 버튼 (상담시트 이동, 관리자, PDF) -->
+            <div id="footer-page-2" class="w-full hidden justify-center gap-4">
+                <button onclick="switchTab(1)" id="btn-back" class="btn-action bg-white border border-gray-300 text-gray-700 hover:bg-gray-50">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                    상담 시트
+                </button>
+                <div class="flex gap-2">
+                    <button onclick="openManagerLogin()" class="btn-action bg-gray-600 text-white hover:bg-gray-700 shadow-md">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                        관리자 페이지
+                    </button>
+                    <button onclick="saveAsPDF()" class="btn-action bg-oska-black text-white hover:bg-gray-800 shadow-lg shadow-gray-200">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        PDF 저장
+                    </button>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <!-- PDF 생성용 -->
+    <div id="pdf-hidden-container"></div>
+
+    
+    <script src="js/config.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
