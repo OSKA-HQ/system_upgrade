@@ -377,6 +377,7 @@
       else if (currentView === 'orders') html = renderOrderList();
       else if (currentView === 'notice') html = renderNotice();
       else if (currentView === 'crm') html = renderCRM();
+      else if (currentView === 'archived') html = renderArchivedCRM();
       else if (currentView === 'dashboard') html = renderDashboardPage();
       else if (currentView === 'schedule') html = renderSchedule();
       else if (currentView === 'leave') html = renderLeave();
@@ -2327,8 +2328,8 @@
                 <button onclick="importAdditionalInquiries()" id="additionalImportBtn" class="h-10 px-5 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 active:scale-[0.98] transition-all flex items-center gap-2">
                   <i data-lucide="file-plus" class="w-3.5 h-3.5"></i> 추가문의 임포트
                 </button>
-                <button onclick="openArchivePanel()" class="h-10 px-5 bg-purple-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-purple-600 active:scale-[0.98] transition-all flex items-center gap-2">
-                  <i data-lucide="archive" class="w-3.5 h-3.5"></i> 고객정리
+                <button onclick="navigate('archived')" class="h-10 px-5 bg-neutral-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-600 active:scale-[0.98] transition-all flex items-center gap-2">
+                  <i data-lucide="archive" class="w-3.5 h-3.5"></i> 정리고객
                 </button>` : ''}
                 <button onclick="downloadCRMExcel()" class="h-10 px-5 bg-white border border-neutral-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:border-black active:scale-[0.98] transition-all flex items-center gap-2">
                   <i data-lucide="download" class="w-3.5 h-3.5"></i> 엑셀 다운로드
@@ -2575,6 +2576,217 @@
                 </div>
               </div>
               ` : ''}
+            </div>
+
+          </main>
+          ${renderFooter()}
+        </div>
+      `;
+    }
+
+    // ===== 정리고객 페이지 (1년 경과 고객 리스트) =====
+    let archivedPage = 0;
+    let archivedSearch = '';
+    let archivedBrandFilter = '전체';
+    let archivedSortField = 'date';
+    let archivedSortDir = 'asc';
+    const ARCHIVED_PAGE_SIZE = 50;
+
+    function getArchivedCustomers() {
+      const now = new Date();
+      const cutoff = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      const cutoffStr = cutoff.toISOString().slice(0, 10);
+
+      // 같은 전화번호로 1년 이내 기록이 하나라도 있으면 보호
+      const activePhones = new Set();
+      customers.forEach(c => {
+        const phone = (c.phone || '').replace(/-/g, '');
+        if (!phone) return;
+        const d = c.date || (c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toISOString().slice(0, 10) : null);
+        if (d && d >= cutoffStr) activePhones.add(phone);
+      });
+
+      let list = customers.filter(c => {
+        const d = c.date || (c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toISOString().slice(0, 10) : null);
+        if (!d || d >= cutoffStr) return false;
+        const phone = (c.phone || '').replace(/-/g, '');
+        if (phone && activePhones.has(phone)) return false;
+        return true;
+      });
+
+      // 브랜드 필터
+      if (archivedBrandFilter !== '전체') list = list.filter(c => c.brand === archivedBrandFilter);
+
+      // 검색
+      if (archivedSearch) {
+        const q = archivedSearch.toLowerCase();
+        list = list.filter(c =>
+          (c.phone || '').includes(q) ||
+          (c.content || '').toLowerCase().includes(q) ||
+          (c.channel || '').toLowerCase().includes(q) ||
+          (c.province || '').includes(q) ||
+          (c.district || '').includes(q) ||
+          (c.brand || '').toLowerCase().includes(q) ||
+          (String(c.no) || '').includes(q)
+        );
+      }
+
+      // 정렬
+      list.sort((a, b) => {
+        let va = '', vb = '';
+        if (archivedSortField === 'date') { va = a.date || ''; vb = b.date || ''; }
+        else if (archivedSortField === 'no') { va = a.no || 0; vb = b.no || 0; }
+        else if (archivedSortField === 'brand') { va = a.brand || ''; vb = b.brand || ''; }
+        else if (archivedSortField === 'channel') { va = a.channel || ''; vb = b.channel || ''; }
+        if (typeof va === 'number') return archivedSortDir === 'asc' ? va - vb : vb - va;
+        return archivedSortDir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+      });
+
+      return list;
+    }
+
+    function setArchivedSearch(v) { archivedSearch = v; archivedPage = 0; render(); }
+    function setArchivedBrand(v) { archivedBrandFilter = v; archivedPage = 0; render(); }
+    function setArchivedSort(field) {
+      if (archivedSortField === field) archivedSortDir = archivedSortDir === 'asc' ? 'desc' : 'asc';
+      else { archivedSortField = field; archivedSortDir = 'desc'; }
+      render();
+    }
+    function setArchivedPage(p) { archivedPage = p; render(); }
+
+    function renderArchivedCRM() {
+      const filtered = getArchivedCustomers();
+      const paged = filtered.slice(archivedPage * ARCHIVED_PAGE_SIZE, (archivedPage + 1) * ARCHIVED_PAGE_SIZE);
+      const totalPages = Math.ceil(filtered.length / ARCHIVED_PAGE_SIZE);
+
+      // 전화번호별 문의 횟수 맵
+      const phoneCountMap = {};
+      customers.forEach(c => {
+        if (c.phone) {
+          const norm = c.phone.replace(/[^0-9]/g, '');
+          if (norm) phoneCountMap[norm] = (phoneCountMap[norm] || 0) + 1;
+        }
+      });
+
+      const sortIcon = function(field) {
+        if (archivedSortField !== field) return '<i data-lucide="arrow-up-down" class="w-2.5 h-2.5 opacity-30"></i>';
+        return archivedSortDir === 'asc' ? '<i data-lucide="arrow-up" class="w-2.5 h-2.5"></i>' : '<i data-lucide="arrow-down" class="w-2.5 h-2.5"></i>';
+      };
+
+      // 테이블 행 HTML
+      const tableRowsHTML = paged.length > 0 ? paged.map(function(c) {
+        const displayGrade = c.grade2 || c.grade || '-';
+        const gradeClass = CRM_GRADE_COLORS[displayGrade] || 'bg-neutral-50 text-neutral-400 border-neutral-200';
+        const pNorm = c.phone ? c.phone.replace(/[^0-9]/g, '') : '';
+        const pCount = pNorm ? (phoneCountMap[pNorm] || 1) : 1;
+        return '<tr class="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">' +
+          '<td class="px-3 py-3 text-neutral-400 font-bold">' + (c.no || '-') + '</td>' +
+          '<td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ' + (c.brand === '테라까사' ? 'bg-orange-50 text-orange-600' : 'bg-neutral-100 text-neutral-600') + '">' + (c.brand || '-') + '</span></td>' +
+          '<td class="px-3 py-3 text-neutral-600 font-bold">' + (c.date || '-') + '</td>' +
+          '<td class="px-3 py-3 font-bold">' + (c.channel || '-') + '</td>' +
+          '<td class="px-3 py-3 font-bold">' + (c.phone || '-') + '</td>' +
+          '<td class="px-3 py-3 font-bold">' + (c.product || '-') + '</td>' +
+          '<td class="px-3 py-3 font-bold">' + (c.custType || '-') + '</td>' +
+          '<td class="px-3 py-3"><span class="text-[9px] font-black px-2 py-0.5 rounded border ' + gradeClass + '">' + displayGrade + '</span></td>' +
+          '<td class="px-3 py-3 text-neutral-500 max-w-[200px] truncate hidden md:table-cell">' + (c.content || '-') + '</td>' +
+          '<td class="px-3 py-3 text-neutral-500 hidden md:table-cell">' + [c.province, c.district].filter(Boolean).join(' ') + '</td>' +
+          '<td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ' + (c.assignedBranch ? 'bg-green-50 text-green-600' : 'text-neutral-400') + '">' + (c.assignedBranch || '-') + '</span></td>' +
+          '<td class="px-3 py-3 text-center"><div class="flex items-center justify-center gap-1.5">' +
+            '<button onclick="openCustomerHistory(\'' + (c.phone || '') + '\', \'' + c.id + '\')" class="relative px-2 py-1 rounded-lg border text-[9px] font-black transition-all ' + (pCount >= 2 ? 'border-black bg-black text-white hover:bg-neutral-800' : 'border-neutral-200 text-neutral-400 hover:border-black hover:text-black') + '" title="고객관리 (' + pCount + '회 문의)">고객관리' +
+              (pCount >= 2 ? '<span class="ml-0.5 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[7px] font-black ' + (pCount >= 3 ? 'bg-red-500 text-white' : 'bg-white text-black') + '">' + pCount + '</span>' : '') +
+            '</button>' +
+            '<button onclick="openEditPanel(\'' + c.id + '\')" class="px-2 py-1 rounded-lg border border-neutral-200 text-[9px] font-black text-neutral-400 hover:border-black hover:text-black transition-all">정보수정</button>' +
+          '</div></td></tr>';
+      }).join('') : '<tr><td colspan="12" class="px-6 py-12 text-center text-neutral-300 text-sm font-bold">정리 대상 고객이 없습니다</td></tr>';
+
+      // 페이지네이션 HTML
+      let paginationHTML = '';
+      if (totalPages > 1) {
+        const pages = [];
+        for (let i = 0; i < totalPages; i++) {
+          pages.push('<button onclick="setArchivedPage(' + i + ')" class="w-8 h-8 rounded-lg text-[10px] font-black transition-all ' + (archivedPage === i ? 'bg-black text-white' : 'text-neutral-400 hover:bg-neutral-100') + '">' + (i + 1) + '</button>');
+        }
+        paginationHTML = '<div class="flex items-center justify-center gap-1 mt-6">' +
+          (archivedPage > 0 ? '<button onclick="setArchivedPage(' + (archivedPage - 1) + ')" class="w-8 h-8 rounded-lg text-neutral-400 hover:bg-neutral-100 flex items-center justify-center"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>' : '') +
+          pages.join('') +
+          (archivedPage < totalPages - 1 ? '<button onclick="setArchivedPage(' + (archivedPage + 1) + ')" class="w-8 h-8 rounded-lg text-neutral-400 hover:bg-neutral-100 flex items-center justify-center"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>' : '') +
+          '</div>';
+      }
+
+      return `
+        <div class="min-h-screen bg-white animate-fade-in">
+          ${renderNav()}
+          <main class="pt-20 pb-20 max-w-6xl mx-auto px-6">
+
+            <div class="flex items-center justify-between mb-8">
+              <div>
+                <h1 class="text-xl font-black tracking-tight">CRM & CDM <span class="text-neutral-400">(정리고객 리스트)</span></h1>
+                <p class="text-[10px] text-neutral-400 font-bold uppercase tracking-widest mt-1">1년 이상 연락 없는 고객 · ${filtered.length}건</p>
+              </div>
+              <div class="flex items-center gap-2">
+                <button onclick="navigate('crm')" class="h-10 px-5 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800 active:scale-[0.98] transition-all flex items-center gap-2">
+                  <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> 관리고객
+                </button>
+                <button onclick="navigate('dashboard')" class="h-10 px-5 bg-white border border-neutral-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:border-black active:scale-[0.98] transition-all flex items-center gap-2">
+                  <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i> 대시보드
+                </button>
+              </div>
+            </div>
+
+            <!-- 필터 / 검색 -->
+            <div class="flex items-center gap-3 mb-4 flex-wrap">
+              <select class="input-base text-[11px] w-auto" onchange="setArchivedBrand(this.value)">
+                <option value="전체" ${archivedBrandFilter === '전체' ? 'selected' : ''}>전체 브랜드</option>
+                <option value="오스카" ${archivedBrandFilter === '오스카' ? 'selected' : ''}>오스카</option>
+                <option value="테라까사" ${archivedBrandFilter === '테라까사' ? 'selected' : ''}>테라까사</option>
+              </select>
+              <div class="flex-1 relative">
+                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-300"></i>
+                <input type="text" class="input-base pl-9 text-[11px] w-full" placeholder="검색 (전화번호, 내용, 지역...)" value="${archivedSearch}" oninput="setArchivedSearch(this.value)" />
+              </div>
+            </div>
+
+            <!-- 테이블 -->
+            <div class="border border-neutral-200 rounded-2xl overflow-hidden">
+              <div class="overflow-x-auto">
+                <table class="w-full text-[11px] border-collapse">
+                  <thead>
+                    <tr class="bg-neutral-50 border-b border-neutral-200">
+                      <th class="px-3 py-3 text-left cursor-pointer select-none" onclick="setArchivedSort('no')">
+                        <span class="flex items-center gap-1 text-[9px] font-black text-neutral-400 uppercase tracking-widest">No ${sortIcon('no')}</span>
+                      </th>
+                      <th class="px-3 py-3 text-left cursor-pointer select-none" onclick="setArchivedSort('brand')">
+                        <span class="flex items-center gap-1 text-[9px] font-black text-neutral-400 uppercase tracking-widest">브랜드 ${sortIcon('brand')}</span>
+                      </th>
+                      <th class="px-3 py-3 text-left cursor-pointer select-none" onclick="setArchivedSort('date')">
+                        <span class="flex items-center gap-1 text-[9px] font-black text-neutral-400 uppercase tracking-widest">날짜 ${sortIcon('date')}</span>
+                      </th>
+                      <th class="px-3 py-3 text-left cursor-pointer select-none" onclick="setArchivedSort('channel')">
+                        <span class="flex items-center gap-1 text-[9px] font-black text-neutral-400 uppercase tracking-widest">채널 ${sortIcon('channel')}</span>
+                      </th>
+                      <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">연락처</th>
+                      <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">제품</th>
+                      <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">유형</th>
+                      <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">등급</th>
+                      <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest hidden md:table-cell">상담내용</th>
+                      <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest hidden md:table-cell">지역</th>
+                      <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">배정</th>
+                      <th class="px-3 py-3 text-center text-[9px] font-black text-neutral-400 uppercase tracking-widest">관리</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${tableRowsHTML}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 페이지네이션 -->
+            ${paginationHTML}
+
+            <!-- 안내 -->
+            <div class="mt-6 p-4 bg-neutral-50 rounded-xl">
+              <p class="text-[9px] text-neutral-400 font-bold">이 목록은 마지막 문의일로부터 1년 이상 경과한 고객입니다. 같은 전화번호로 1년 이내 재문의 기록이 있는 고객은 자동으로 보호됩니다.</p>
             </div>
 
           </main>
