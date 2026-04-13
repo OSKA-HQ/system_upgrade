@@ -1140,6 +1140,38 @@
       `;
     }
 
+    // ===== 발주 상세 보기 =====
+    function viewOrderDetail(orderId) {
+      const o = orders.find(x => x.id === orderId);
+      if (!o) return;
+      const typeLabel = ORDER_TYPE_LABEL[o.orderType] || '제품';
+      const modal = document.createElement('div');
+      modal.id = 'order-detail-modal';
+      modal.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm';
+      modal.onclick = function(e) { if (e.target === modal) modal.remove(); };
+      modal.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[80vh] overflow-y-auto p-6">
+          <div class="flex items-center justify-between mb-6">
+            <h3 class="text-sm font-black uppercase tracking-widest">발주 상세</h3>
+            <button onclick="document.getElementById('order-detail-modal').remove()" class="text-neutral-400 hover:text-black"><i data-lucide="x" class="w-5 h-5"></i></button>
+          </div>
+          <div class="space-y-3">
+            <div class="flex justify-between py-2 border-b border-neutral-100"><span class="text-[10px] text-neutral-400">발주번호</span><span class="text-xs font-bold">${o.orderNumber || '-'}</span></div>
+            <div class="flex justify-between py-2 border-b border-neutral-100"><span class="text-[10px] text-neutral-400">유형</span><span class="text-xs font-bold">${typeLabel}</span></div>
+            <div class="flex justify-between py-2 border-b border-neutral-100"><span class="text-[10px] text-neutral-400">현장명</span><span class="text-xs font-bold">${o.siteName || '-'}</span></div>
+            <div class="flex justify-between py-2 border-b border-neutral-100"><span class="text-[10px] text-neutral-400">지사</span><span class="text-xs font-bold">${o.branch || '-'}</span></div>
+            <div class="flex justify-between py-2 border-b border-neutral-100"><span class="text-[10px] text-neutral-400">담당자</span><span class="text-xs font-bold">${o.manager || '-'}</span></div>
+            <div class="flex justify-between py-2 border-b border-neutral-100"><span class="text-[10px] text-neutral-400">상태</span><span class="text-xs font-bold">${o.status || '접수'}</span></div>
+            <div class="flex justify-between py-2 border-b border-neutral-100"><span class="text-[10px] text-neutral-400">금액</span><span class="text-xs font-bold">${formatCurrency(o.total || 0)}</span></div>
+            <div class="flex justify-between py-2 border-b border-neutral-100"><span class="text-[10px] text-neutral-400">등록일</span><span class="text-xs font-bold">${formatDate(o.createdAt)}</span></div>
+            ${o.memo ? `<div class="pt-2"><span class="text-[10px] text-neutral-400 block mb-1">비고</span><p class="text-xs text-neutral-600">${o.memo}</p></div>` : ''}
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      lucide.createIcons();
+    }
+
     // ===== 발주 현황 (2단계: 생산 추적 워크스페이스) =====
     const PRODUCTION_STAGES = ['접수', '자재', '제작', '품질1차', '도장', '품질2차', '포장', '출고', '완료'];
 
@@ -2137,7 +2169,8 @@
               <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">전화번호</label>
-                  <input type="tel" id="crmPhone" class="input-base mt-1" placeholder="010-0000-0000" />
+                  <input type="tel" id="crmPhone" class="input-base mt-1" placeholder="010-0000-0000" oninput="formatCRMPhone(this); checkDuplicatePhone(this.value);" maxlength="13" />
+                  <div id="phone-duplicate-warning" class="mt-1 hidden"></div>
                 </div>
                 <div>
                   <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">이메일</label>
@@ -2394,6 +2427,58 @@
       }
     }
 
+    function formatCRMPhone(input) {
+      let value = input.value.replace(/[^0-9]/g, '');
+      let result = '';
+      if (value.length < 4) {
+        result = value;
+      } else if (value.length < 7) {
+        result = value.substr(0, 3) + '-' + value.substr(3);
+      } else if (value.length < 11) {
+        result = value.substr(0, 3) + '-' + value.substr(3, 3) + '-' + value.substr(6);
+      } else {
+        result = value.substr(0, 3) + '-' + value.substr(3, 4) + '-' + value.substr(7, 4);
+      }
+      input.value = result;
+    }
+
+    function checkDuplicatePhone(phone) {
+      const warningDiv = document.getElementById('phone-duplicate-warning');
+      if (!warningDiv) return;
+      const cleaned = phone.replace(/[^0-9]/g, '');
+      if (cleaned.length < 8) {
+        warningDiv.classList.add('hidden');
+        warningDiv.innerHTML = '';
+        return;
+      }
+      const matches = customers.filter(c => {
+        const cPhone = (c.phone || '').replace(/[^0-9]/g, '');
+        return cPhone && cPhone === cleaned;
+      });
+      if (matches.length === 0) {
+        warningDiv.classList.add('hidden');
+        warningDiv.innerHTML = '';
+        return;
+      }
+      warningDiv.classList.remove('hidden');
+      let html = '<div class="bg-red-50 border border-red-200 rounded-lg p-2 space-y-1">';
+      html += '<p class="text-[9px] font-black text-red-500 uppercase tracking-widest">⚠ 기존 고객 ' + matches.length + '건 발견</p>';
+      matches.forEach(m => {
+        const date = m.date || '날짜없음';
+        const channel = m.channel || '채널없음';
+        const brand = m.brand || '';
+        const product = m.product || '';
+        html += '<div class="text-[10px] text-red-600 flex gap-2">';
+        html += '<span class="font-bold">' + date + '</span>';
+        html += '<span>' + channel + '</span>';
+        if (brand) html += '<span class="text-red-400">' + brand + '</span>';
+        if (product) html += '<span class="text-red-400 truncate max-w-[120px]">' + product + '</span>';
+        html += '</div>';
+      });
+      html += '</div>';
+      warningDiv.innerHTML = html;
+    }
+
     async function saveCRMCustomer() {
       const brand = document.getElementById('crmBrand').value;
       const date = document.getElementById('crmDate').value;
@@ -2438,6 +2523,8 @@
           if (el) el.tagName === 'SELECT' ? el.selectedIndex = 0 : el.value = '';
         });
         document.querySelectorAll('input[name="crmProductCheck"]').forEach(cb => cb.checked = false);
+        const warn = document.getElementById('phone-duplicate-warning');
+        if (warn) { warn.classList.add('hidden'); warn.innerHTML = ''; }
       } catch(e) {
         console.error('CRM save error:', e);
         alert('저장 실패: ' + e.message);
