@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TERRACASA 견적 시스템</title>
+    
+    <!-- 1. Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- 2. Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <!-- 3. EmailJS -->
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+
+    <!-- 4. Firebase (CRM 연동) -->
+    <script type="module">
+      import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+      import { getFirestore, collection, addDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+      import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+      const app = initializeApp({
+        apiKey: "AIzaSyDs8IJANSBncJHcFFrF03pLM7JvEOppcY0",
+        authDomain: "oska-integrated-management.firebaseapp.com",
+        projectId: "oska-integrated-management",
+        storageBucket: "oska-integrated-management.firebasestorage.app",
+        messagingSenderId: "778732114280",
+        appId: "1:778732114280:web:96e00aff42bdbff3bf06dd"
+      });
+      const auth = getAuth(app);
+      signInAnonymously(auth);
+      window.TC_CRM_DB = { db: getFirestore(app), collection, addDoc, serverTimestamp };
+    </script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap');
+        body { font-family: 'Noto Sans KR', sans-serif; word-break: keep-all; }
+        .text-tc-olive { color: #4A5D23; }
+        .bg-tc-olive { background-color: #4A5D23; }
+        .ring-tc-olive { --tw-ring-color: #4A5D23; }
+        .hidden { display: none !important; }
+        
+        /* 인쇄 스타일 */
+        @media print {
+            body > * { display: none !important; }
+            #result-modal, #result-modal * { display: block !important; visibility: visible !important; }
+            #result-modal { 
+                position: absolute !important; left: 0 !important; top: 0 !important; 
+                width: 100% !important; background: white !important;
+                padding: 0 !important; border: none !important;
+            }
+            #modal-overlay { background: none !important; }
+            .no-print { display: none !important; }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex items-center justify-center p-4">
+
+    <!-- 메인 컨테이너 -->
+    <div id="main-container" class="bg-white w-full max-w-xl rounded-2xl shadow-xl overflow-hidden min-h-[650px] flex flex-col relative print:hidden">
+        
+        <!-- 헤더 -->
+        <div class="bg-white border-b p-4 flex justify-between items-center">
+            <h1 class="text-lg font-extrabold text-tc-olive tracking-wide uppercase">Terracasa Pergola</h1>
+            <div class="text-xs font-bold text-gray-400 bg-gray-100 px-2 py-1 rounded">Step <span id="current-step-num">1</span> / 9</div>
+        </div>
+
+        <!-- 진행바 -->
+        <div class="w-full h-1 bg-gray-100">
+            <div id="progress-bar" class="h-full bg-tc-olive transition-all duration-300 ease-out" style="width: 11.1%;"></div>
+        </div>
+
+        <!-- 콘텐츠 영역 -->
+        <div id="steps-container" class="flex-1 p-6 md:p-8 overflow-y-auto">
+            
+            <!-- STEP 1: 인트로 -->
+            <div id="step-1" class="step-content flex flex-col items-center text-center py-4">
+               <img src="logo.png" class="h-36 mb-8" alt="TERRACASA LOGO">
+                <h2 class="text-xl md:text-2xl font-black text-gray-800 mb-6 leading-tight">
+                    공간의 가치를 더하는 테라스 솔루션,<br>
+                    <span class="text-tc-olive">TERRACASA 자동 견적 시스템</span>에<br>오신 것을 환영합니다.
+                </h2>
+                <div class="space-y-4 text-gray-600 mb-10">
+                    <p class="text-sm md:text-base">
+                        복잡한 상담 전, 클릭 몇 번으로<br>
+                        예상 시공 비용을 미리 계산해 보실 수 있습니다.
+                    </p>
+                    <div class="bg-gray-50 p-4 rounded-xl border border-gray-100 text-xs text-left">
+                        <p class="font-bold text-tc-olive mb-1 flex items-center gap-1">
+                            <i data-lucide="info" class="w-3 h-3"></i> 안내사항
+                        </p>
+                        <p>견적 시스템이 종료되면 전문 담당자가 <span class="font-bold underline">1주일 이내</span>에 개별 연락을 드려 더욱 상세하고 전문적인 실측 상담을 도와드릴 예정입니다.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 2: 시공 지역 선택 -->
+            <div id="step-2" class="step-content hidden">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+                    <i data-lucide="map-pin" class="text-tc-olive"></i> 시공 지역 선택
+                </h2>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">시/도</label>
+                        <select id="input-region-do" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tc-olive outline-none bg-white">
+                            <option value="">선택</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">시/군/구</label>
+                        <select id="input-region-si" disabled class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tc-olive outline-none bg-white disabled:bg-gray-100">
+                            <option value="">선택</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 3: 고객 구분 -->
+            <div id="step-3" class="step-content hidden">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-2">
+                    <i data-lucide="user" class="text-tc-olive"></i> 고객 구분
+                </h2>
+                <p class="text-sm text-gray-500 mb-6">정확한 상담 배정을 위해 고객 유형을 선택해주세요.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3" id="user-type-options"></div>
+            </div>
+
+            <!-- STEP 4: 시공 시기 -->
+            <div id="step-4" class="step-content hidden">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+                    <i data-lucide="calendar" class="text-tc-olive"></i> 시공 예정 시기
+                </h2>
+                <div class="grid grid-cols-1 gap-3" id="timeline-options"></div>
+            </div>
+
+            <!-- STEP 5: 양중 환경 -->
+            <div id="step-5" class="step-content hidden">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-2">
+                    <i data-lucide="truck" class="text-tc-olive"></i> 자재 반입 환경 (양중)
+                </h2>
+                <p class="text-sm text-gray-500 mb-6">설치 장소로 자재를 옮길 수 있는 가장 유사한 방법을 선택해주세요.</p>
+                <div class="grid grid-cols-1 gap-3" id="lifting-options"></div>
+            </div>
+
+            <!-- STEP 6: 제품 사양 및 사이즈 -->
+            <div id="step-6" class="step-content hidden">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+                    <i data-lucide="ruler" class="text-tc-olive"></i> 제품 사양 및 사이즈
+                </h2>
+                
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div id="op-manual" class="cursor-pointer p-4 rounded-xl border-2 transition-all relative overflow-hidden border-gray-200 hover:border-gray-300">
+                        <div class="flex justify-between items-center mb-2 relative z-10">
+                            <span class="font-bold text-lg">수동 (Manual)</span>
+                            <i data-lucide="sun" class="text-orange-400"></i>
+                        </div>
+                        <ul class="text-xs text-gray-600 space-y-1 relative z-10">
+                            <li class="text-blue-600 font-semibold">✔ 경제적인 가격</li>
+                            <li>✖ LED 옵션 설치 어려움</li>
+                            <li>✖ 글라스 도어 설치 제한</li>
+                        </ul>
+                    </div>
+                    <div id="op-electric" class="cursor-pointer p-4 rounded-xl border-2 transition-all relative overflow-hidden border-gray-200 hover:border-gray-300">
+                        <div class="flex justify-between items-center mb-2 relative z-10">
+                            <span class="font-bold text-lg text-tc-olive">전동 (Electric)</span>
+                            <i data-lucide="zap" class="text-yellow-500"></i>
+                        </div>
+                        <ul class="text-xs text-gray-600 space-y-1 relative z-10">
+                            <li>✔ 리모컨 작동 편리함</li>
+                            <li class="text-blue-600 font-semibold">✔ LED 조명 옵션 가능</li>
+                            <li class="text-blue-600 font-semibold">✔ 글라스 도어 호환 우수</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 p-6 rounded-2xl border border-gray-200 mb-6">
+                    <h3 class="font-bold text-gray-700 mb-4 flex items-center gap-2">
+                        <i data-lucide="mouse-pointer-click" class="text-tc-olive"></i> 설치 공간 사이즈 (단위: m)
+                    </h3>
+                    <div class="grid grid-cols-2 gap-6">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-500 mb-2 ml-1">가로 (Width)</label>
+                            <div class="relative">
+                                <input type="number" id="input-width" placeholder="예: 4" step="0.1"
+                                    class="w-full p-4 pr-10 border border-gray-300 rounded-xl focus:border-tc-olive outline-none text-2xl font-bold text-center bg-white shadow-sm">
+                                <span class="absolute right-4 top-5 text-gray-400 font-bold">m</span>
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-500 mb-2 ml-1">세로/돌출 (Projection)</label>
+                            <div class="relative">
+                                <input type="number" id="input-projection" placeholder="예: 3" step="0.1"
+                                    class="w-full p-4 pr-10 border border-gray-300 rounded-xl focus:border-tc-olive outline-none text-2xl font-bold text-center bg-white shadow-sm">
+                                <span class="absolute right-4 top-5 text-gray-400 font-bold">m</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 7: 옵션 및 연락처 -->
+            <div id="step-7" class="step-content hidden">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+                    <i data-lucide="check-circle" class="text-tc-olive"></i> 추가 옵션 및 연락처
+                </h2>
+                
+                <label id="card-led" class="relative flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all border-gray-200 hover:border-gray-300 mb-4">
+                    <div class="flex-shrink-0 mt-1">
+                        <input type="checkbox" id="check-led" class="w-5 h-5 accent-tc-olive">
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-gray-800 text-lg">LED 조명 추가</span>
+                            <i data-lucide="lightbulb" class="text-gray-300 icon-led"></i>
+                        </div>
+                        <p class="text-sm text-gray-500">야간에도 분위기 있는 테라스를 즐겨보세요.</p>
+                        <p id="msg-manual-led" class="mt-2 text-xs text-red-500 bg-red-50 p-2 rounded font-bold hidden">⚠️ 수동 모델은 LED 설치 시 별도 배선 비용이 크게 발생합니다. (전동 추천)</p>
+                    </div>
+                </label>
+
+                <div id="card-glass" class="p-4 rounded-xl border-2 transition-all border-gray-200 bg-white mb-4">
+                    <div class="flex justify-between items-center mb-3">
+                        <div class="flex items-center gap-2">
+                            <i data-lucide="door-open" class="text-gray-400 icon-glass"></i>
+                            <span class="font-bold text-gray-800 text-lg">글라스 도어 (폴딩/슬라이딩)</span>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2" id="glass-options"></div>
+                    <p id="msg-manual-glass" class="mt-3 text-xs text-orange-600 bg-orange-50 p-2 rounded font-bold hidden">💡 수동 핸들 간섭으로 인해 글라스 도어 설치가 제한될 수 있습니다.</p>
+                </div>
+
+                <label id="card-deck" class="relative flex items-start gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all border-gray-200 hover:border-gray-300 mb-8">
+                    <div class="flex-shrink-0 mt-1">
+                        <input type="checkbox" id="check-deck" class="w-5 h-5 accent-tc-olive">
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="font-bold text-gray-800 text-lg">바닥 데크 시공 의뢰</span>
+                            <i data-lucide="hammer" class="text-gray-300 icon-deck"></i>
+                        </div>
+                        <p class="text-sm text-gray-500">프리미엄 스톤데크 시공 견적도 함께 받아봅니다.</p>
+                    </div>
+                </label>
+
+                <div class="border-t pt-6">
+                    <h3 class="font-bold text-gray-800 mb-4 flex items-center gap-2">
+                        <i data-lucide="phone" class="text-tc-olive"></i> 견적서 전송 정보
+                    </h3>
+                    <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-r mb-6">
+                        <div class="flex items-start">
+                            <i data-lucide="shield-check" class="h-5 w-5 text-blue-600 mr-2 mt-0.5 flex-shrink-0"></i>
+                            <p class="text-xs text-blue-800 font-medium ml-2">
+                                <span class="font-bold">보안 안내:</span> 본 시스템은 허위 견적 및 타인 정보 도용 방지를 위해 사용자의 <span class="underline">접속 IP, 대략적인 위치 정보, 기기 환경, 견적 시간</span>을 기록하고 있습니다. 도용 시 법적인 책임이 따를 수 있습니다.
+                            </p>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">휴대폰 번호</label>
+                        <input type="tel" id="input-phone" placeholder="010-0000-0000" maxlength="13"
+                            class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-tc-olive outline-none transition">
+                    </div>
+                </div>
+
+                <div class="pt-4 mt-4">
+                    <div class="flex items-start gap-2 text-xs text-gray-500 bg-gray-50 p-3 rounded">
+                        <i data-lucide="info" class="w-4 h-4 mt-0.5 flex-shrink-0"></i>
+                        <p>'견적 확인하기'를 누르시면 <span class="font-bold text-gray-700">개인정보 수집 및 마케팅 활용</span>에 동의하는 것으로 간주되며, 입력하신 정보가 담당자에게 실시간 전송됩니다.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 8: 빠른 상담 작성 -->
+            <div id="step-8" class="step-content hidden">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+                    <i data-lucide="message-square" class="text-tc-olive"></i> 빠른 상담 요청
+                </h2>
+                <div class="space-y-4">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">연락처</label>
+                            <input type="text" id="consult-phone" disabled class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-500 font-bold">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-gray-500 mb-1">시공지역</label>
+                            <input type="text" id="consult-region" disabled class="w-full p-3 bg-gray-50 border border-gray-200 rounded-lg text-gray-500 font-bold">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">상담 상세 내용</label>
+                        <textarea id="input-consult-detail" rows="6" placeholder="시공 현장의 특이사항이나 궁금하신 점을 자유롭게 적어주세요. (예: 아파트 테라스 5층, 기존 데크 철거 필요 등)"
+                            class="w-full p-4 border border-gray-300 rounded-xl focus:ring-2 focus:ring-tc-olive outline-none resize-none transition shadow-sm"></textarea>
+                    </div>
+                    <div class="bg-tc-olive/5 p-4 rounded-xl border border-tc-olive/10 text-xs text-gray-600">
+                        <p class="flex items-center gap-1 font-bold text-tc-olive mb-1"><i data-lucide="info" class="w-3 h-3"></i> 안내</p>
+                        <p>작성하신 상담 내용은 담당자에게 즉시 전달되며, 보다 정확한 가견적 상담이 가능해집니다.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- STEP 9: 접수 완료 -->
+            <div id="step-9" class="step-content hidden flex flex-col items-center text-center py-10">
+                <div class="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center mb-6">
+                    <i data-lucide="check" class="w-10 h-10"></i>
+                </div>
+                <h2 class="text-2xl font-black text-gray-800 mb-2">고객님의 요청이 접수되었습니다.</h2>
+                <p class="text-gray-500 mb-10 leading-relaxed">작성해주신 소중한 정보를 바탕으로<br>담당자가 최대한 빠르게 연락 드리도록 하겠습니다.</p>
+                
+                <div class="w-full space-y-3">
+                    <a href="https://www.terracasa.co.kr/" target="_blank" class="block w-full py-4 bg-tc-olive text-white font-bold rounded-xl hover:bg-opacity-90 transition flex items-center justify-center gap-2 shadow-lg">
+                        <i data-lucide="home"></i> 테라까사 홈페이지로 가기
+                    </a>
+                    <div class="grid grid-cols-2 gap-3">
+                        <button onclick="window.location.reload()" class="py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition">처음으로 돌아가기</button>
+                        <button onclick="window.close()" class="py-3 bg-gray-100 text-gray-700 font-bold rounded-xl hover:bg-gray-200 transition">종료하기</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 에러 메시지 -->
+            <div id="error-msg" class="p-3 bg-red-100 text-red-600 rounded-lg text-center font-bold animate-pulse hidden mt-4"></div>
+        </div>
+
+        <!-- 푸터 (버튼) -->
+        <div class="p-4 bg-white border-t space-y-3" id="footer-buttons">
+            <div class="flex gap-3">
+                <button id="btn-prev" class="flex-1 py-3 rounded-xl border border-gray-300 font-bold text-gray-500 hover:bg-gray-50 transition hidden">이전</button>
+                <button id="btn-next" class="flex-1 py-3 rounded-xl bg-tc-olive text-white font-bold text-lg hover:bg-opacity-90 transition flex justify-center items-center gap-2">
+                    다음 <i data-lucide="chevron-right"></i>
+                </button>
+                <button id="btn-submit" class="flex-1 py-3 rounded-xl bg-tc-olive text-white font-bold text-lg hover:bg-opacity-90 transition flex justify-center items-center gap-2 hidden">
+                    견적 확인하기 <i data-lucide="calculator"></i>
+                </button>
+                <button id="btn-consult-submit" class="flex-1 py-3 rounded-xl bg-tc-olive text-white font-bold text-lg hover:bg-opacity-90 transition flex justify-center items-center gap-2 hidden">
+                    빠른 상담 접수 <i data-lucide="send"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- 결과 모달 -->
+        <div id="modal-overlay" class="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+            <div id="result-modal" class="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+                <div class="bg-tc-olive p-6 text-white text-center print:border-b-2 print:border-black print:text-black print:bg-white">
+                    <h2 class="text-3xl font-black mb-1">TERRACASA</h2>
+                    <p class="text-sm opacity-90 font-medium tracking-widest uppercase">Smart Quotation</p>
+                </div>
+                
+                <div class="p-6 space-y-6">
+                    <div class="text-center border-b pb-6 border-gray-100 print:border-black">
+                        <p class="text-sm text-gray-500 mb-1">총 예상 견적가 (VAT 별도)</p>
+                        <p class="text-4xl font-black text-gray-800 tracking-tight" id="result-total-price">0원~</p>
+                    </div>
+
+                    <div id="result-swapped-msg" class="bg-green-50 p-4 rounded-xl border border-green-200 text-sm text-green-800 mb-4 flex items-start gap-2 hidden">
+                        <i data-lucide="rotate-cw" class="w-5 h-5 flex-shrink-0 mt-0.5 text-green-600"></i>
+                        <div>
+                            <span class="font-bold">가로/세로 방향 자동 최적화 적용됨</span>
+                            <p class="mt-1" id="result-swapped-text"></p>
+                        </div>
+                    </div>
+
+                    <div id="result-cap-msg" class="bg-red-50 p-4 rounded-xl border border-red-200 text-sm text-red-800 mb-4 hidden">
+                        <p class="font-bold mb-1 flex items-center gap-1"><i data-lucide="alert-triangle" class="w-4 h-4"></i> 사이즈 안내</p>
+                        <div id="result-cap-text" class="mb-2">제품 1개소 기준 최대사이즈를 초과하여 최대사이즈 기준으로 견적을 산출했습니다.</div>
+                    </div>
+
+                    <div class="bg-blue-50 p-4 rounded-xl border border-blue-200 text-sm text-blue-800 mb-4 flex items-start gap-2">
+                        <i data-lucide="info" class="w-5 h-5 flex-shrink-0 mt-0.5 text-blue-600"></i>
+                        <p><strong>데크, 글라스도어의 경우</strong> 현장 실측 및 상담 후 정확한 안내가 가능하며 해당 견적에는 <span class="font-bold">관련 시공비</span>가 포함되어있지 않습니다.</p>
+                    </div>
+
+                    <div class="space-y-3 text-sm" id="result-details"></div>
+
+                    <div class="bg-gray-50 p-4 rounded-xl text-xs text-gray-500 space-y-1 print:bg-white print:border print:border-gray-200">
+                        <p class="font-bold text-gray-700 mb-1">※ 유의사항</p>
+                        <p>1. 자동견적 프로그램에 지역별 출장비는 반영되어있지 않습니다.</p>
+                        <p>2. 운임의 경우 제품의 개소에 따라 추가 부과 될 수 있습니다.</p>
+                        <p>3. 글라스도어 및 데크 시공비는 현장 실측 후 정확히 산출됩니다.</p>
+                        <p>• 위 금액은 가견적이며 현장 상황에 따라 변동될 수 있습니다.</p>
+                        <p>• 정확한 상담을 위해 담당자가 <span class="font-bold">1주일 이내</span>에 연락드릴 예정입니다.</p>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-3 no-print pt-4">
+                        <button id="btn-modal-close" class="flex items-center justify-center gap-2 p-4 rounded-xl bg-gray-100 text-gray-700 font-bold hover:bg-gray-200 transition">
+                            <i data-lucide="rotate-ccw" class="w-5 h-5"></i>
+                            <span>이전으로</span>
+                        </button>
+                        <button id="btn-goto-consult" class="flex items-center justify-center gap-2 p-4 rounded-xl bg-tc-olive text-white font-bold hover:bg-green-800 transition shadow-lg animate-bounce">
+                            <i data-lucide="message-square" class="w-5 h-5"></i>
+                            <span>빠른 상담 요청</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================= 설정 =================
+        const EMAILJS_SERVICE_ID = "service_r3nil9k";
+        const EMAILJS_TEMPLATE_ID = "template_2lqnkam";
+        const EMAILJS_PUBLIC_KEY = "uqikvD1GCoxfF_h69";
+
+        // ================= 데이터 보존 (전수 출력) =================
+        const oasisManualPriceTable = {
+            2600: [3200000, 3400000, 3600000, 3800000, 4000000, 4200000, 4400000],
+            2775: [3240000, 3450000, 3660000, 3870000, 4080000, 4290000, 4500000],
+            2950: [3280000, 3500000, 3720000, 3940000, 4160000, 4380000, 4600000],
+            3125: [3320000, 3550000, 3780000, 4010000, 4240000, 4470000, 4700000],
+            3300: [3360000, 3600000, 3840000, 4080000, 4320000, 4560000, 4800000],
+            3475: [3400000, 3650000, 3900000, 4150000, 4400000, 4650000, 4900000],
+            3650: [3440000, 3700000, 3960000, 4220000, 4480000, 4740000, 5000000],
+            3825: [3480000, 3750000, 4020000, 4290000, 4560000, 4830000, 5100000],
+            4000: [3520000, 3800000, 4080000, 4360000, 4640000, 4920000, 5200000],
+            4175: [3560000, 3850000, 4140000, 4430000, 4720000, 5010000, 5300000],
+            4350: [3600000, 3900000, 4200000, 4500000, 4800000, 5100000, 5400000],
+            4525: [3640000, 3950000, 4260000, 4570000, 4880000, 5190000, 5500000],
+            4700: [3680000, 4000000, 4320000, 4640000, 4960000, 5280000, 5600000],
+            4875: [3720000, 4050000, 4380000, 4710000, 5040000, 5370000, 5700000],
+            5050: [3760000, 4100000, 4440000, 4780000, 5120000, 5460000, 5800000],
+            5225: [3800000, 4150000, 4500000, 4850000, 5200000, 5550000, 5900000],
+            5400: [3840000, 4200000, 4560000, 4920000, 5280000, 5640000, 6000000],
+            5575: [3880000, 4250000, 4620000, 4990000, 5360000, 5730000, 6100000],
+            5750: [3920000, 4300000, 4680000, 5060000, 5440000, 5820000, 6200000],
+            5925: [3960000, 4350000, 4740000, 5130000, 5520000, 5910000, 6300000]
+        };
+
+        const oasisElectricPriceTable = {
+            2600: [3600000, 3850000, 4100000, 4350000, 4600000, 4850000, 5100000],
+            2775: [3640000, 3900000, 4160000, 4420000, 4680000, 4940000, 5200000],
+            2950: [3680000, 3950000, 4220000, 4490000, 4760000, 5030000, 5300000],
+            3125: [3720000, 4000000, 4280000, 4560000, 4840000, 5120000, 5400000],
+            3300: [3760000, 4050000, 4340000, 4630000, 4920000, 5210000, 5500000],
+            3475: [3800000, 4100000, 4400000, 4700000, 5000000, 5300000, 5600000],
+            3650: [3840000, 4150000, 4460000, 4770000, 5080000, 5390000, 5700000],
+            3825: [3880000, 4200000, 4520000, 4840000, 5160000, 5480000, 5800000],
+            4000: [3920000, 4250000, 4580000, 4910000, 5240000, 5570000, 5900000],
+            4175: [3960000, 4300000, 4640000, 4980000, 5320000, 5660000, 6000000],
+            4350: [4000000, 4350000, 4700000, 5050000, 5400000, 5750000, 6100000],
+            4525: [4040000, 4400000, 4760000, 5120000, 5480000, 5840000, 6200000],
+            4700: [4080000, 4450000, 4820000, 5190000, 5560000, 5930000, 6300000],
+            4875: [4120000, 4500000, 4880000, 5260000, 5640000, 6020000, 6400000],
+            5050: [4160000, 4550000, 4940000, 5330000, 5720000, 6110000, 6500000],
+            5225: [4200000, 4600000, 5000000, 5400000, 5800000, 6200000, 6600000],
+            5400: [4240000, 4650000, 5060000, 5470000, 5880000, 6290000, 6700000],
+            5575: [4280000, 4700000, 5120000, 5540000, 5960000, 6380000, 6800000],
+            5750: [4320000, 4750000, 5180000, 5610000, 6040000, 6470000, 6900000],
+            5925: [4360000, 4800000, 5240000, 5680000, 6120000, 6560000, 7000000]
+        };
+
+        const regions = {
+            '서울특별시': ['강남구', '강동구', '강북구', '강서구', '관악구', '광진구', '구로구', '금천구', '노원구', '도봉구', '동대문구', '동작구', '마포구', '서대문구', '서초구', '성동구', '성북구', '송파구', '양천구', '영등포구', '용산구', '은평구', '종로구', '중구', '중랑구'],
+            '부산광역시': ['강서구', '금정구', '기장군', '남구', '동구', '동래구', '부산진구', '북구', '사상구', '사하구', '서구', '수영구', '연제구', '영도구', '중구', '해운대구'],
+            '대구광역시': ['군위군', '남구', '달서구', '달성군', '동구', '북구', '서구', '수성구', '중구'],
+            '인천광역시': ['강화군', '계양구', '남동구', '동구', '미추홀구', '부평구', '서구', '연수구', '옹진군', '중구'],
+            '광주광역시': ['광산구', '남구', '동구', '북구', '서구'],
+            '대전광역시': ['대덕구', '동구', '서구', '유성구', '중구'],
+            '울산광역시': ['남구', '동구', '북구', '울주군', '중구'],
+            '세종특별자치시': ['세종시'],
+            '경기도': ['가평군', '고양시', '과천시', '광명시', '광주시', '구리시', '군포시', '김포시', '남양주시', '동두천시', '부천시', '성남시', '수원시', '시흥시', '안산시', '안성시', '안양시', '양주시', '양평군', '여주시', '연천군', '오산시', '용인시', '의왕시', '의정부시', '이천시', '파주시', '평택시', '포천시', '하남시', '화성시'],
+            '강원특별자치도': ['강릉시', '고성군', '동해시', '삼척시', '속초시', '양구군', '양양군', '영월군', '원주시', '인제군', '정선군', '철원군', '춘천시', '태백시', '평창군', '홍천군', '화천군', '횡성군'],
+            '충청북도': ['괴산군', '단양군', '보은군', '영동군', '옥천군', '음성군', '제천시', '증평군', '진천군', '청주시', '충주시'],
+            '충청남도': ['계룡시', '공주시', '금산군', '논산시', '당진시', '보령시', '부여군', '서산시', '서천군', '아산시', '예산군', '천안시', '청양군', '태안군', '홍성군'],
+            '전북특별자치도': ['고창군', '군산시', '김제시', '남원시', '무주군', '부안군', '순창군', '완주군', '익산시', '임실군', '장수군', '전주시', '정읍시', '진안군'],
+            '전라남도': ['강진군', '고흥군', '곡성군', '광양시', '구례군', '나주시', '담양군', '목포시', '무안군', '보성군', '순천시', '신안군', '여수시', '영광군', '영암군', '완도군', '장성군', '장흥군', '진도군', '함평군', '해남군', '화순군'],
+            '경상북도': ['경산시', '경주시', '고령군', '구미시', '김천시', '문경시', '봉화군', '상주시', '성주군', '안동시', '영덕군', '영양군', '영주시', '영천시', '예천군', '울릉군', '울진군', '의성군', '청도군', '청송군', '칠곡군', '포항시'],
+            '경상남도': ['거제시', '거창군', '고성군', '김해시', '남해군', '밀양시', '사천시', '산청군', '양산시', '의령군', '진주시', '창녕군', '창원시', '통영시', '하동군', '함안군', '함양군', '합천군'],
+            '제주특별자치도': ['서귀포시', '제주시']
+        };
+
+        // ================= 상태 관리 =================
+        let currentStep = 1;
+        let formData = {
+            phone: '', regionDo: '', regionSi: '', userType: '',
+            timeline: '', liftingType: '', operationType: '',
+            width: '', projection: '', optionLed: false,
+            optionGlass: '', optionDeck: false, consultDetail: ''
+        };
+
+        // ================= 초기화 =================
+        window.onload = async function() {
+            if (window.emailjs) emailjs.init(EMAILJS_PUBLIC_KEY);
+            lucide.createIcons();
+
+            // 지역 데이터 바인딩
+            const regionDoSelect = document.getElementById('input-region-do');
+            Object.keys(regions).forEach(r => {
+                const opt = document.createElement('option');
+                opt.value = r; opt.text = r;
+                regionDoSelect.appendChild(opt);
+            });
+
+            // 옵션 버튼 생성
+            createButtons('user-type-options', ['개인 고객', '인테리어 업체', '조경 업체', '건축/설계사', '관공서/기업'], 'userType');
+            createButtonsWithValues('timeline-options', [
+                {label: '1개월 이내 (긴급)', val: 'urgent'},
+                {label: '3개월 이내 (보통)', val: 'normal'},
+                {label: '6개월 이내 (여유)', val: 'relaxed'},
+                {label: '6개월 이후 / 계획단계', val: 'planning'}
+            ], 'timeline');
+            createButtonsWithValues('lifting-options', [
+                { label: '즉시 진입 가능', desc: '1층 / 화물차 하차 후 즉시 진입', val: 'direct_entry', icon: 'arrow-right-from-line'},
+                { label: '사다리차 사용', desc: '1층 이상 / 진입로 협소', val: 'ladder', icon: 'arrow-up-to-line'},
+                { label: '크레인 사용', desc: '고층 / 대형 장비 필요', val: 'crane', icon: 'construction'},
+                { label: '자재 소운반 (20m+)', desc: '하차 후 20m 이상 인력 운반', val: 'long_carry', icon: 'footprints'},
+                { label: '잘 모르겠음', desc: '현장 확인 필요', val: 'unknown', icon: 'help-circle'}
+            ], 'liftingType');
+
+            // 글라스 도어 옵션
+            const glassContainer = document.getElementById('glass-options');
+            [{val:'none', label:'설치 안함'}, {val:'with', label:'함께 시공'}, {val:'later', label:'추후 예정'}].forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = `py-2 rounded-lg text-sm font-medium transition-all bg-white border border-gray-300 text-gray-600 hover:bg-gray-50 glass-btn`;
+                btn.dataset.value = opt.val; btn.textContent = opt.label;
+                btn.onclick = () => {
+                    formData.optionGlass = opt.val;
+                    updateGlassUI();
+                    clearError();
+                };
+                glassContainer.appendChild(btn);
+            });
+
+            // 핸들러 등록
+            document.getElementById('btn-next').onclick = nextStep;
+            document.getElementById('btn-prev').onclick = prevStep;
+            document.getElementById('btn-submit').onclick = calculateQuote;
+            document.getElementById('btn-consult-submit').onclick = submitConsultation;
+            document.getElementById('input-phone').oninput = formatPhone;
+            
+            // 시공 지역 선택
+            document.getElementById('input-region-do').onchange = (e) => {
+                formData.regionDo = e.target.value; formData.regionSi = '';
+                updateRegionSi(); clearError();
+            };
+            document.getElementById('input-region-si').onchange = (e) => {
+                formData.regionSi = e.target.value; clearError();
+            };
+
+            // 구동 방식 및 사이즈 리스너
+            document.getElementById('op-manual').onclick = () => setOperation('manual');
+            document.getElementById('op-electric').onclick = () => setOperation('electric');
+            document.getElementById('input-width').oninput = (e) => { formData.width = e.target.value; clearError(); };
+            document.getElementById('input-projection').oninput = (e) => { formData.projection = e.target.value; clearError(); };
+
+            // 옵션 리스너
+            document.getElementById('check-led').onchange = (e) => { formData.optionLed = e.target.checked; updateLedUI(); };
+            document.getElementById('check-deck').onchange = (e) => { formData.optionDeck = e.target.checked; updateDeckUI(); };
+            
+            // 상담 내용 리스너
+            document.getElementById('input-consult-detail').oninput = (e) => { formData.consultDetail = e.target.value; };
+
+            // 모달 리스너
+            document.getElementById('btn-modal-close').onclick = closeModal;
+            document.getElementById('btn-goto-consult').onclick = goToConsultationStep;
+        };
+
+        // ================= UI 로직 =================
+        function formatPhone(e) {
+            let val = e.target.value.replace(/[^0-9]/g, '');
+            if (val.length > 3 && val.length <= 7) val = val.slice(0,3)+'-'+val.slice(3);
+            else if (val.length > 7) val = val.slice(0,3)+'-'+val.slice(3,7)+'-'+val.slice(7, 11);
+            e.target.value = val; formData.phone = val; clearError();
+        }
+
+        function updateStepUI() {
+            document.querySelectorAll('.step-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`step-${currentStep}`).classList.remove('hidden');
+            document.getElementById('current-step-num').textContent = currentStep;
+            document.getElementById('progress-bar').style.width = `${(currentStep / 9) * 100}%`;
+            
+            // 푸터 버튼 가시성
+            document.getElementById('footer-buttons').classList.toggle('hidden', currentStep === 9);
+            document.getElementById('btn-prev').classList.toggle('hidden', currentStep === 1 || currentStep === 9);
+            
+            const isLastStep = currentStep === 7;
+            const isConsultStep = currentStep === 8;
+            
+            document.getElementById('btn-next').classList.toggle('hidden', isLastStep || isConsultStep || currentStep === 9);
+            document.getElementById('btn-submit').classList.toggle('hidden', !isLastStep);
+            document.getElementById('btn-consult-submit').classList.toggle('hidden', !isConsultStep);
+
+            // Step 8 진입 시 데이터 채우기
+            if (currentStep === 8) {
+                document.getElementById('consult-phone').value = formData.phone;
+                document.getElementById('consult-region').value = `${formData.regionDo} ${formData.regionSi}`;
+            }
+            
+            lucide.createIcons();
+        }
+
+        function createButtons(containerId, options, field) {
+            const container = document.getElementById(containerId);
+            options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = `p-4 rounded-xl border-2 text-left transition-all border-gray-200 hover:border-tc-olive hover:bg-gray-50 option-btn-${field}`;
+                btn.textContent = opt;
+                btn.onclick = () => {
+                    formData[field] = opt;
+                    document.querySelectorAll(`.option-btn-${field}`).forEach(b => b.classList.remove('border-tc-olive','bg-green-50','text-tc-olive','font-bold','shadow-md'));
+                    btn.classList.add('border-tc-olive','bg-green-50','text-tc-olive','font-bold','shadow-md');
+                    clearError(); setTimeout(() => nextStep(), 250);
+                };
+                container.appendChild(btn);
+            });
+        }
+
+        function createButtonsWithValues(containerId, options, field) {
+            const container = document.getElementById(containerId);
+            options.forEach(opt => {
+                const btn = document.createElement('button');
+                btn.className = `p-4 rounded-xl border-2 text-left transition-all flex items-center gap-4 group border-gray-200 hover:border-tc-olive hover:bg-gray-50 option-btn-${field}`;
+                btn.innerHTML = `
+                    <div class="flex-shrink-0 p-2 rounded-full border border-gray-100 shadow-sm bg-gray-50 text-gray-400 group-hover:text-tc-olive icon-box"><i data-lucide="${opt.icon || 'circle'}"></i></div>
+                    <div><div class="font-bold text-lg label-text text-gray-800">${opt.label}</div>${opt.desc ? `<div class="text-sm text-gray-500">${opt.desc}</div>` : ''}</div>
+                `;
+                btn.onclick = () => {
+                    formData[field] = opt.val;
+                    document.querySelectorAll(`.option-btn-${field}`).forEach(b => b.classList.remove('border-tc-olive','bg-green-50','ring-1','ring-tc-olive'));
+                    btn.classList.add('border-tc-olive','bg-green-50','ring-1','ring-tc-olive');
+                    clearError(); setTimeout(() => nextStep(), 250);
+                };
+                container.appendChild(btn);
+            });
+            lucide.createIcons();
+        }
+
+        function updateRegionSi() {
+            const si = document.getElementById('input-region-si');
+            si.innerHTML = '<option value="">선택</option>';
+            if (formData.regionDo && regions[formData.regionDo]) {
+                regions[formData.regionDo].forEach(s => { const o = document.createElement('option'); o.value = s; o.text = s; si.appendChild(o); });
+                si.disabled = false;
+            } else { si.disabled = true; }
+        }
+
+        function setOperation(type) {
+            formData.operationType = type;
+            ['op-manual', 'op-electric'].forEach(id => {
+                const el = document.getElementById(id);
+                el.classList.remove('border-tc-olive', 'bg-green-50', 'ring-2', 'ring-tc-olive');
+                el.classList.add('border-gray-200');
+            });
+            document.getElementById(`op-${type}`).classList.add('border-tc-olive', 'bg-green-50', 'ring-2', 'ring-tc-olive');
+            updateLedUI(); updateGlassUI(); clearError();
+        }
+
+        function updateLedUI() {
+            const card = document.getElementById('card-led');
+            const icon = card.querySelector('.icon-led');
+            const msg = document.getElementById('msg-manual-led');
+            if (formData.optionLed) {
+                card.classList.add('border-tc-olive', 'bg-green-50', 'ring-1', 'ring-tc-olive');
+                icon.classList.add('text-yellow-500', 'fill-yellow-500');
+            } else {
+                card.classList.remove('border-tc-olive', 'bg-green-50', 'ring-1', 'ring-tc-olive');
+                icon.classList.remove('text-yellow-500', 'fill-yellow-500');
+            }
+            msg.classList.toggle('hidden', !(formData.operationType === 'manual' && formData.optionLed));
+        }
+
+        function updateGlassUI() {
+            const card = document.getElementById('card-glass');
+            const icon = card.querySelector('.icon-glass');
+            const btns = document.querySelectorAll('.glass-btn');
+            const msg = document.getElementById('msg-manual-glass');
+            if (formData.optionGlass !== '') {
+                card.classList.add('border-tc-olive', 'bg-green-50', 'ring-1', 'ring-tc-olive');
+                icon.classList.replace('text-gray-400', 'text-tc-olive');
+            }
+            btns.forEach(b => {
+                const active = b.dataset.value === formData.optionGlass;
+                if (active) {
+                    b.classList.remove('bg-white', 'text-gray-600', 'border-gray-300');
+                    b.classList.add('bg-tc-olive', 'text-white', 'border-tc-olive', 'shadow-md');
+                } else {
+                    b.classList.remove('bg-tc-olive', 'text-white', 'border-tc-olive', 'shadow-md');
+                    b.classList.add('bg-white', 'text-gray-600', 'border-gray-300');
+                }
+            });
+            msg.classList.toggle('hidden', !(formData.operationType === 'manual' && formData.optionGlass !== '' && formData.optionGlass !== 'none'));
+        }
+
+        function updateDeckUI() {
+            const card = document.getElementById('card-deck');
+            const icon = card.querySelector('.icon-deck');
+            if (formData.optionDeck) {
+                card.classList.add('border-tc-olive', 'bg-green-50', 'ring-1', 'ring-tc-olive');
+                icon.classList.replace('text-gray-300', 'text-tc-olive');
+            } else {
+                card.classList.remove('border-tc-olive', 'bg-green-50', 'ring-1', 'ring-tc-olive');
+                icon.classList.replace('text-tc-olive', 'text-gray-300');
+            }
+        }
+
+        function nextStep() { if (validateStep()) { currentStep++; updateStepUI(); clearError(); } }
+        function prevStep() { if (currentStep > 1) { currentStep--; updateStepUI(); clearError(); } }
+        function clearError() { document.getElementById('error-msg').classList.add('hidden'); }
+
+        function validateStep() {
+            const error = document.getElementById('error-msg');
+            let m = "";
+            if (currentStep === 2) { if(!formData.regionDo || !formData.regionSi) m = "시공 지역을 선택해주세요."; }
+            else if (currentStep === 3) { if(!formData.userType) m = "고객 구분을 선택해주세요."; }
+            else if (currentStep === 4) { if(!formData.timeline) m = "시공 예정 시기를 선택해주세요."; }
+            else if (currentStep === 5) { if(!formData.liftingType) m = "양중 환경을 선택해주세요."; }
+            else if (currentStep === 6) { if(!formData.operationType) m = "구동 방식을 선택해주세요."; else if(!formData.width || !formData.projection) m = "사이즈를 입력해주세요."; }
+            else if (currentStep === 7) { 
+                if(!formData.optionGlass) m = "글라스 도어 옵션을 선택해주세요.";
+                else if(!/^010-\d{4}-\d{4}$/.test(formData.phone)) m = "휴대폰 번호를 정확히 입력해주세요.";
+            }
+            if (m) { error.textContent = m; error.classList.remove('hidden'); return false; }
+            return true;
+        }
+
+        function goToConsultationStep() {
+            closeModal();
+            currentStep = 8;
+            updateStepUI();
+        }
+
+        // ================= 핵심 로직 =================
+        async function getSecurityInfo() {
+            try {
+                const res = await fetch('https://ipapi.co/json/');
+                const data = await res.json();
+                return {
+                    ip: data.ip,
+                    location: `${data.city}, ${data.region}, ${data.country_name}`,
+                    device: navigator.userAgent,
+                    time: new Date().toLocaleString('ko-KR')
+                };
+            } catch (e) {
+                return { ip: "Unknown", location: "Unknown", device: navigator.userAgent, time: new Date().toLocaleString('ko-KR') };
+            }
+        }
+
+        function calcPrice(w, p, op) {
+            const isManual = op === 'manual';
+            const MAX_W = 4000; const MAX_P = isManual ? 5400 : 5925;
+            const inW = Math.round(parseFloat(w) * 1000); const inP = Math.round(parseFloat(p) * 1000);
+            let appW = Math.min(inW, MAX_W); let appP = Math.min(inP, MAX_P);
+            const table = isManual ? oasisManualPriceTable : oasisElectricPriceTable;
+            const pivot = Object.keys(table).map(Number).sort((a,b)=>a-b).find(v => v >= appP) || 5925;
+            const getIdx = (s) => s <= 1000 ? 0 : s <= 1500 ? 1 : s <= 2000 ? 2 : s <= 2500 ? 3 : s <= 3000 ? 4 : s <= 3500 ? 5 : 6;
+            return { price: table[pivot][getIdx(appW)], unitW: appW, unitP: appP, isCapped: (inW > MAX_W || inP > MAX_P) };
+        }
+
+        async function calculateQuote() {
+            if (!validateStep()) return;
+            const btn = document.getElementById('btn-submit');
+            btn.innerHTML = '전송중... <i data-lucide="loader" class="animate-spin"></i>';
+            lucide.createIcons(); btn.disabled = true;
+
+            const resOrg = calcPrice(formData.width, formData.projection, formData.operationType);
+            const resSwp = calcPrice(formData.projection, formData.width, formData.operationType);
+            let final = resOrg; let swp = false;
+            if ((resSwp.unitW * resSwp.unitP) > (resOrg.unitW * resOrg.unitP)) { final = resSwp; swp = true; }
+            else if ((resSwp.unitW * resSwp.unitP) === (resOrg.unitW * resOrg.unitP) && resSwp.price < resOrg.price) { final = resSwp; swp = true; }
+
+            let total = final.price;
+            let optArr = [];
+            if (formData.optionLed) { 
+                const cost = formData.operationType === 'manual' ? 1000000 : 500000;
+                total += cost; optArr.push({ name: `LED 조명 (${formData.operationType==='manual'?'수동용':'전동용'})`, cost });
+            }
+            if (formData.optionGlass === 'with') optArr.push({ name: '글라스 도어', cost: 0, note: '실측 후 견적' });
+            if (formData.optionDeck) optArr.push({ name: '데크 시공', cost: 0, note: '실측 후 견적' });
+
+            let freight = 300000;
+            if (formData.regionDo === '제주특별자치도') freight = 1800000;
+            else if (['경상북도','경상남도','부산광역시','울산광역시','대구광역시','전라남도','전북특별자치도','광주광역시'].includes(formData.regionDo)) freight = 500000;
+            total += (freight + 800000);
+
+            const sec = await getSecurityInfo();
+            const result = { totalPrice: total, isSwapped: swp, isCapped: final.isCapped, breakdown: { unitW: final.unitW, unitP: final.unitP, freight, labor: 800000, options: optArr }, security: sec };
+
+            await sendEmail(result);
+            showModal(result);
+            btn.innerHTML = '견적 확인하기 <i data-lucide="calculator"></i>'; btn.disabled = false;
+        }
+
+        async function sendEmail(res) {
+            const templateParams = {
+                user_phone: formData.phone,
+                user_region: `${formData.regionDo} ${formData.regionSi}`,
+                user_type: formData.userType,
+                op_type: formData.operationType === 'manual' ? 'OASIS 수동' : 'OASIS 전동',
+                timeline: formData.timeline,
+                size_info: `${formData.width}m x ${formData.projection}m`,
+                final_size: `${res.breakdown.unitW} x ${res.breakdown.unitP}mm`,
+                options_summary: `${formData.optionLed?'LED ':''}${formData.optionGlass!=='none'?'글라스도어 ':''}${formData.optionDeck?'데크':''}`,
+                total_price: `₩ ${res.totalPrice.toLocaleString()}`,
+                ip: res.security.ip,
+                location: res.security.location,
+                device: res.security.device,
+                check_time: res.security.time,
+                swapped_msg: res.isSwapped ? '※ 방향 최적화 적용됨' : '',
+                capped_msg: res.isCapped ? '※ 최대 규격 초과' : ''
+            };
+            try { await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams); } catch(e) { console.error("Email Error", e); }
+        }
+
+        async function submitConsultation() {
+            const btn = document.getElementById('btn-consult-submit');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '접수 중... <i data-lucide="loader" class="animate-spin"></i>';
+            lucide.createIcons();
+            btn.disabled = true;
+
+            const sec = await getSecurityInfo();
+            const consultParams = {
+                user_phone: formData.phone,
+                user_region: `${formData.regionDo} ${formData.regionSi}`,
+                message: `
+[테라까사 빠른 상담 접수]
+--------------------------------
+■ 고객 정보
+- 연락처: ${formData.phone}
+- 지역: ${formData.regionDo} ${formData.regionSi}
+
+■ 상담 상세 내용
+${formData.consultDetail || "입력된 상세 내용 없음"}
+
+--------------------------------
+■ 보안 로그 (Security Log)
+- 접속 IP: ${sec.ip}
+- 위치: ${sec.location}
+- 확인 시간: ${sec.time}
+--------------------------------
+                `
+            };
+
+            try {
+                // EmailJS template의 message 변수를 통해 전송 (기존 템플릿 재활용 혹은 별도 구성 가능)
+                await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, consultParams);
+                currentStep = 9;
+                updateStepUI();
+            } catch (err) {
+                console.error(err);
+                alert('접수 중 오류가 발생했습니다. 다시 시도해주세요.');
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
+
+        function showModal(res) {
+            document.getElementById('modal-overlay').classList.remove('hidden');
+            const disp = Math.round(res.totalPrice / 10000) * 10000;
+            document.getElementById('result-total-price').textContent = `${disp.toLocaleString()}원~`;
+            document.getElementById('result-swapped-msg').classList.toggle('hidden', !res.isSwapped);
+            if(res.isSwapped) document.getElementById('result-swapped-text').innerHTML = `입력하신 사이즈(${formData.width}m x ${formData.projection}m)보다 <span class="font-bold underline text-tc-olive">가로/세로 방향을 변경하여 시공(${formData.projection}m x ${formData.width}m)</span>하는 것이 공간 효율 및 가격 면에서 유리하여 최적 견적을 산출했습니다.`;
+            document.getElementById('result-cap-msg').classList.toggle('hidden', !res.isCapped);
+            document.getElementById('result-details').innerHTML = `
+                <div class="flex justify-between border-b pb-2"><span>연락처</span><span class="font-bold">${formData.phone}</span></div>
+                <div class="flex justify-between border-b pb-2"><span>지역</span><span class="font-bold">${formData.regionDo} ${formData.regionSi}</span></div>
+                <div class="flex justify-between border-b pb-2"><span>모델</span><span class="font-bold text-tc-olive">${formData.operationType==='manual'?'OASIS 수동':'OASIS 전동'}</span></div>
+                <div class="flex justify-between border-b pb-2"><span>규격</span><span class="font-bold">${res.breakdown.unitW} x ${res.breakdown.unitP} mm</span></div>
+                ${res.breakdown.options.map(o => `<div class="flex justify-between border-b pb-2 text-gray-600"><span>+ ${o.name}</span><span>${o.cost > 0 ? '₩ '+o.cost.toLocaleString() : o.note}</span></div>`).join('')}
+                <div class="flex justify-between border-b pb-2 text-gray-600"><span>+ 기본 시공/운임</span><span>₩ ${(res.breakdown.labor + res.breakdown.freight).toLocaleString()}</span></div>
+            `;
+            lucide.createIcons();
+        }
+
+        function closeModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
+    </script>
+</body>
+</html>
