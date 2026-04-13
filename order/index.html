@@ -3042,18 +3042,54 @@
 
     /* ── 과거 데이터 임포트 (2020~2024) ── */
     async function importLegacyData() {
-      if (!confirm('2020~2024년 과거 문의 데이터 11,250건을 CRM에 추가합니다.\n시간이 3~5분 소요될 수 있습니다. 진행하시겠습니까?')) return;
+      if (!confirm('2020~2024년 과거 문의 데이터 11,250건을 CRM에 추가합니다.\n\n⚠ 이전에 중단된 임포트 데이터가 있으면 자동으로 정리 후 다시 시작합니다.\n시간이 3~5분 소요될 수 있습니다. 진행하시겠습니까?')) return;
 
       const btn = document.getElementById('legacyImportBtn');
-      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> 로딩 중...'; }
+      if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> 준비 중...'; }
 
       try {
+        const { db, collection, addDoc, getDocs, doc, deleteDoc, serverTimestamp } = window.WORKS_DB;
+
+        // 1단계: 이전 임포트 데이터 정리 (2024년 이전 날짜 + createdAt이 오늘인 문서 = 레거시 임포트 데이터)
+        if (btn) btn.innerHTML = '<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> 기존 데이터 정리 중...';
+        const snap = await getDocs(collection(db, 'crm_customers'));
+        const toDelete = [];
+        const today = new Date().toISOString().slice(0, 10);
+        snap.forEach(d => {
+          const data = d.data();
+          // 레거시 데이터 판별: date가 2025년 이전 + brand가 OSKA + createdAt이 오늘
+          if (data.brand === 'OSKA' && data.date && data.date < '2025-01-01') {
+            const createdDate = data.createdAt?.seconds
+              ? new Date(data.createdAt.seconds * 1000).toISOString().slice(0, 10)
+              : '';
+            if (createdDate === today) {
+              toDelete.push(d.id);
+            }
+          }
+        });
+
+        if (toDelete.length > 0) {
+          if (btn) btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> ${toDelete.length}건 정리 중...`;
+          const DEL_CHUNK = 50;
+          for (let i = 0; i < toDelete.length; i += DEL_CHUNK) {
+            const slice = toDelete.slice(i, i + DEL_CHUNK);
+            await Promise.all(slice.map(id => deleteDoc(doc(db, 'crm_customers', id))));
+            if (btn) btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> 정리 ${Math.min(i + DEL_CHUNK, toDelete.length)}/${toDelete.length}`;
+          }
+        }
+
+        // 2단계: JSON 로드 및 임포트
+        if (btn) btn.innerHTML = '<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> 데이터 로딩...';
         const resp = await fetch('../crm_import_legacy.json');
         const data = await resp.json();
-        const { db, collection, addDoc, serverTimestamp } = window.WORKS_DB;
 
-        // 기존 최대 no 값 가져오기
-        let maxNo = customers.length > 0 ? Math.max(...customers.map(c => c.no || 0)) : 0;
+        // 기존 최대 no 값 가져오기 (정리 후 다시 계산)
+        const freshSnap = await getDocs(collection(db, 'crm_customers'));
+        let maxNo = 0;
+        freshSnap.forEach(d => {
+          const no = d.data().no || 0;
+          if (no > maxNo) maxNo = no;
+        });
 
         let imported = 0;
         const total = data.length;
@@ -3074,7 +3110,7 @@
           if (btn) btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> ${imported}/${total} (${Math.round(imported/total*100)}%)`;
         }
 
-        alert(`✅ 임포트 완료! ${imported}건 추가됨\n\n고객정리를 실행하면 1년 경과 데이터가 자동으로 아카이브됩니다.`);
+        alert(`✅ 임포트 완료!\n${toDelete.length > 0 ? `기존 ${toDelete.length}건 정리 후 ` : ''}${imported}건 추가됨\n\n고객정리를 실행하면 1년 경과 데이터가 자동으로 아카이브됩니다.`);
         document.getElementById('archiveOverlay')?.remove();
       } catch(e) {
         console.error('Legacy import error:', e);
