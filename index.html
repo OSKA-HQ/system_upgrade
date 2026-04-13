@@ -1075,6 +1075,7 @@
             </h3>
             <div class="flex gap-3 mb-3">
               <select id="newAccType" class="h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all cursor-pointer w-32">
+                <option value="hq">본사</option>
                 <option value="branch">지사</option>
                 <option value="dealer">대리점</option>
               </select>
@@ -1212,7 +1213,7 @@
       const requests = state._regRequests || [];
       const pending = requests.filter(r => r.status === 'pending');
       const processed = requests.filter(r => r.status !== 'pending');
-      const TYPE_LABEL = { branch: '지사', dealer: '대리점' };
+      const TYPE_LABEL = { hq: '본사', branch: '지사', dealer: '대리점' };
 
       return `
         <div class="space-y-6">
@@ -1330,6 +1331,7 @@
             </h3>
             <div class="grid grid-cols-2 gap-3 mb-3">
               <select id="branchType" class="h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all cursor-pointer">
+                <option value="hq">본사</option>
                 <option value="branch">지사</option>
                 <option value="dealer">대리점</option>
               </select>
@@ -1356,8 +1358,8 @@
               </div>
             ` : branchNames.map((branchName) => {
               const branch = BRANCHES[branchName];
-              const typeLabel = branch.type === 'dealer' ? '대리점' : '지사';
-              const typeColor = branch.type === 'dealer' ? 'border-purple-200 bg-purple-50' : 'border-blue-200 bg-blue-50';
+              const typeLabel = branch.type === 'hq' ? '본사' : branch.type === 'dealer' ? '대리점' : '지사';
+              const typeColor = branch.type === 'hq' ? 'border-neutral-300 bg-neutral-50' : branch.type === 'dealer' ? 'border-purple-200 bg-purple-50' : 'border-blue-200 bg-blue-50';
               const isExpanded = state.expandedBranch === branchName;
               const staff = branch.staff || [];
 
@@ -1369,7 +1371,7 @@
                     <div class="flex-1">
                       <div class="flex items-center gap-3 mb-2">
                         <h3 class="text-lg font-black">${branchName}</h3>
-                        <span class="text-[8px] font-black px-2 py-0.5 rounded ${branch.type === 'dealer' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">${typeLabel}</span>
+                        <span class="text-[8px] font-black px-2 py-0.5 rounded ${branch.type === 'hq' ? 'bg-neutral-200 text-neutral-700' : branch.type === 'dealer' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">${typeLabel}</span>
                       </div>
                       <div class="text-[10px] text-neutral-400 space-y-0.5 font-bold">
                         ${branch.bizNumber ? `<p>사업자: ${branch.bizNumber}</p>` : ''}
