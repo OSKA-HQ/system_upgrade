@@ -228,14 +228,16 @@
     }
 
     function subscribeCustomers() {
-      const { db, collection, query, orderBy, onSnapshot } = window.WORKS_DB;
+      const { db, collection, query, onSnapshot } = window.WORKS_DB;
       const ref = collection(db, 'crm_customers');
-      const q = query(ref, orderBy('no', 'desc'));
+      const q = query(ref);
       unsubCustomers = onSnapshot(q, (snapshot) => {
         const newCustomers = [];
         snapshot.forEach(doc => {
           newCustomers.push({ id: doc.id, ...doc.data() });
         });
+        // no 필드 기준 내림차순 정렬 (no 없는 문서는 맨 뒤로)
+        newCustomers.sort((a, b) => (b.no || 0) - (a.no || 0));
         // 데이터 변경 없으면 render 스킵
         if (newCustomers.length === _lastCustomerCount && customers.length > 0) {
           customers = newCustomers;
@@ -247,23 +249,6 @@
         if (currentView === 'crm' || currentView === 'home' || currentView === 'dashboard') throttledRender();
       }, (error) => {
         console.error('CRM subscribe error:', error);
-        // 인덱스 문제시 orderBy 없이 재시도
-        const q2 = query(ref);
-        unsubCustomers = onSnapshot(q2, (snapshot) => {
-          const newCustomers = [];
-          snapshot.forEach(doc => {
-            newCustomers.push({ id: doc.id, ...doc.data() });
-          });
-          newCustomers.sort((a, b) => (b.no || 0) - (a.no || 0));
-          if (newCustomers.length === _lastCustomerCount && customers.length > 0) {
-            customers = newCustomers;
-            return;
-          }
-          customers = newCustomers;
-          _lastCustomerCount = customers.length;
-          console.log('CRM loaded (fallback):', customers.length, 'records');
-          if (currentView === 'crm' || currentView === 'home' || currentView === 'dashboard') throttledRender();
-        });
       });
     }
 
