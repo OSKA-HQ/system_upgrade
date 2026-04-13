@@ -2676,7 +2676,13 @@
       return list;
     }
 
-    function setArchivedSearch(v) { archivedSearch = v; archivedPage = 0; render(); }
+    let _archivedSearchDebounce = null;
+    function setArchivedSearch(v) {
+      archivedSearch = v;
+      archivedPage = 0;
+      clearTimeout(_archivedSearchDebounce);
+      _archivedSearchDebounce = setTimeout(() => render(), 300);
+    }
     function setArchivedBrand(v) { archivedBrandFilter = v; archivedPage = 0; render(); }
     function setArchivedSort(field) {
       if (archivedSortField === field) archivedSortDir = archivedSortDir === 'asc' ? 'desc' : 'asc';
@@ -2729,16 +2735,39 @@
           '<td class="px-3 py-3 text-center text-[9px] text-neutral-400 font-bold">' + archivedDate + '</td></tr>';
       }).join('') : '<tr><td colspan="12" class="px-6 py-12 text-center text-neutral-300 text-sm font-bold">정리 완료된 고객이 없습니다</td></tr>';
 
-      // 페이지네이션 HTML
+      // 페이지네이션 HTML (축약형: 처음2 ... 현재±2 ... 끝2)
       let paginationHTML = '';
       if (totalPages > 1) {
-        const pages = [];
-        for (let i = 0; i < totalPages; i++) {
-          pages.push('<button onclick="setArchivedPage(' + i + ')" class="w-8 h-8 rounded-lg text-[10px] font-black transition-all ' + (archivedPage === i ? 'bg-black text-white' : 'text-neutral-400 hover:bg-neutral-100') + '">' + (i + 1) + '</button>');
+        const btnClass = function(i) {
+          return 'w-8 h-8 rounded-lg text-[10px] font-black transition-all ' + (archivedPage === i ? 'bg-black text-white' : 'text-neutral-400 hover:bg-neutral-100');
+        };
+        const pageBtn = function(i) {
+          return '<button onclick="setArchivedPage(' + i + ')" class="' + btnClass(i) + '">' + (i + 1) + '</button>';
+        };
+        const ellipsis = '<span class="w-8 h-8 flex items-center justify-center text-[10px] text-neutral-300">...</span>';
+
+        let pages = '';
+        if (totalPages <= 9) {
+          for (let i = 0; i < totalPages; i++) pages += pageBtn(i);
+        } else {
+          // 항상 표시: 0, 1, totalPages-2, totalPages-1
+          // 현재 주변: archivedPage-1, archivedPage, archivedPage+1
+          const visible = new Set([0, 1, totalPages - 2, totalPages - 1]);
+          for (let i = archivedPage - 1; i <= archivedPage + 1; i++) {
+            if (i >= 0 && i < totalPages) visible.add(i);
+          }
+          const sorted = [...visible].sort((a, b) => a - b);
+          let prev = -1;
+          sorted.forEach(function(i) {
+            if (prev !== -1 && i - prev > 1) pages += ellipsis;
+            pages += pageBtn(i);
+            prev = i;
+          });
         }
+
         paginationHTML = '<div class="flex items-center justify-center gap-1 mt-6">' +
           (archivedPage > 0 ? '<button onclick="setArchivedPage(' + (archivedPage - 1) + ')" class="w-8 h-8 rounded-lg text-neutral-400 hover:bg-neutral-100 flex items-center justify-center"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>' : '') +
-          pages.join('') +
+          pages +
           (archivedPage < totalPages - 1 ? '<button onclick="setArchivedPage(' + (archivedPage + 1) + ')" class="w-8 h-8 rounded-lg text-neutral-400 hover:bg-neutral-100 flex items-center justify-center"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>' : '') +
           '</div>';
       }
@@ -2772,7 +2801,7 @@
               </select>
               <div class="flex-1 relative">
                 <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-neutral-300"></i>
-                <input type="text" class="input-base pl-9 text-[11px] w-full" placeholder="검색 (전화번호, 내용, 지역...)" value="${archivedSearch}" oninput="setArchivedSearch(this.value)" />
+                <input type="text" id="archivedSearchInput" class="input-base pl-9 text-[11px] w-full" placeholder="검색 (전화번호, 내용, 지역...)" value="${archivedSearch}" oninput="setArchivedSearch(this.value)" />
               </div>
             </div>
 
