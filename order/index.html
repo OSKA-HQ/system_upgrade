@@ -125,6 +125,7 @@
     let crmFilter = '전체';
     let crmBrandFilter = '전체';
     let crmRepeatFilter = '전체';   // '전체','2회 이상','3회 이상'
+    let crmAssignFilter = '전체';   // '전체','미배정'
     let crmSearch = '';
     let crmPage = 0;
     const CRM_PAGE_SIZE = 50;
@@ -1963,6 +1964,9 @@
       const repeat2Count = [...uniquePhones2].reduce((s, p) => s + phoneCountMap[p], 0);
       const repeat3Count = [...uniquePhones3].reduce((s, p) => s + phoneCountMap[p], 0);
 
+      // 미배정 건수 (status === '미배정'인 신규 DB만)
+      const unassignedCount = customers.filter(c => c.status === '미배정').length;
+
       // 파이프라인 카운트
       const counts = { '전체': customers.length };
       CRM_GRADES.forEach(g => { counts[g] = customers.filter(c => c.grade2 === g).length; });
@@ -2142,6 +2146,10 @@
                 <option value="2회 이상" ${crmRepeatFilter === '2회 이상' ? 'selected' : ''}>2회 이상 문의 (${repeat2Count}건)</option>
                 <option value="3회 이상" ${crmRepeatFilter === '3회 이상' ? 'selected' : ''}>3회 이상 문의 (${repeat3Count}건)</option>
               </select>
+              <select id="crmAssignSelect" class="input-base w-auto md:w-40" onchange="crmAssignFilter=this.value; crmPage=0; render();">
+                <option value="전체" ${crmAssignFilter === '전체' ? 'selected' : ''}>전체 배정</option>
+                <option value="미배정" ${crmAssignFilter === '미배정' ? 'selected' : ''}>미배정 (${unassignedCount}건)</option>
+              </select>
             </div>
 
             <!-- 고객 테이블 -->
@@ -2185,7 +2193,7 @@
                       <td class="px-3 py-3"><span class="text-[9px] font-black px-2 py-0.5 rounded border ${gradeClass}">${displayGrade}</span></td>
                       <td class="px-3 py-3 text-neutral-500 max-w-[200px] truncate hidden md:table-cell">${c.content || '-'}</td>
                       <td class="px-3 py-3 text-neutral-500 hidden md:table-cell">${[c.province, c.district].filter(Boolean).join(' ') || '-'}</td>
-                      <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${c.assignedBranch ? 'bg-green-50 text-green-600' : 'text-neutral-400'}">${c.assignedBranch || '-'}</span></td>
+                      <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${c.status === '미배정' ? 'bg-red-50 text-red-500 border border-red-200' : c.assignedBranch ? 'bg-green-50 text-green-600' : 'text-neutral-400'}">${c.status === '미배정' ? '미배정' : c.assignedBranch || '-'}</span></td>
                       <td class="px-3 py-3 text-center">
                         <div class="flex items-center justify-center gap-1.5">
                           <button onclick="openCustomerHistory('${c.phone || ''}')" class="relative ${histIconColor} hover:text-blue-500 transition-colors" title="고객관리 (${pCount}회 문의)">
@@ -2229,6 +2237,10 @@
       if (crmFilter === '-') list = list.filter(c => !CRM_GRADES.includes(c.grade2));
       else if (crmFilter !== '전체') list = list.filter(c => c.grade2 === crmFilter);
       if (crmBrandFilter !== '전체') list = list.filter(c => c.brand === crmBrandFilter);
+      // 미배정 필터 (status === '미배정'인 신규 DB만 대상)
+      if (crmAssignFilter === '미배정') {
+        list = list.filter(c => c.status === '미배정');
+      }
       // 다회 문의 필터
       if (crmRepeatFilter !== '전체') {
         const phoneMap = {};
@@ -2319,6 +2331,7 @@
           channel, consent, phone, email,
           product, custType, grade: grade2, grade2,
           province, district, address, assignedBranch, content,
+          status: (!assignedBranch && !grade2) ? '미배정' : '',
           createdAt: serverTimestamp()
         });
         alert('고객 정보가 저장되었습니다.');
@@ -2921,6 +2934,13 @@
           content: document.getElementById('editContent').value.trim(),
           updatedAt: serverTimestamp()
         };
+        // 미배정 고객에게 지사배정 또는 등급을 부여하면 배정완료 처리
+        const editTarget = customers.find(x => x.id === editingCustomerId);
+        if (editTarget && editTarget.status === '미배정') {
+          if (updates.assignedBranch || updates.grade2) {
+            updates.status = '배정완료';
+          }
+        }
         await updateDoc(doc(db, 'crm_customers', editingCustomerId), updates);
         closeEditPanel();
       } catch(e) {
