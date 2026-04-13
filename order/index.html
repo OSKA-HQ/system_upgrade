@@ -2533,7 +2533,17 @@
           status: (!grade2) ? '미배정' : '',
           createdAt: serverTimestamp()
         });
-        alert('고객 정보가 저장되었습니다.');
+        // 아카이브에 같은 전화번호 고객이 있으면 자동 복원
+        if (phone) {
+          const restored = await restoreArchivedByPhone(phone);
+          if (restored > 0) {
+            alert(`고객 정보가 저장되었습니다.\n\n📋 이전 정리된 이력 ${restored}건이 자동 복원되었습니다.`);
+          } else {
+            alert('고객 정보가 저장되었습니다.');
+          }
+        } else {
+          alert('고객 정보가 저장되었습니다.');
+        }
         toggleCRMForm();
         // 폼 초기화
         ['crmChannel','crmPhone','crmEmail','crmGrade2','crmProvince','crmDistrict','crmAddress','crmAssignedBranch','crmContent'].forEach(id => {
@@ -2747,8 +2757,11 @@
 
     // 지사이관 + 지역 오타 동기화 (Firestore 기존 데이터 업데이트)
     /* ── 고객정리 (1년 경과 데이터 아카이빙) ── */
-    function openArchivePanel() {
-      // 1년 전 기준일 계산
+    /* ── 고객정리 패널 (탭: 정리대상 / 정리완료) ── */
+    let _archiveCache = []; // 정리완료 고객 캐시
+
+    async function openArchivePanel(tab) {
+      tab = tab || 'pending';
       const now = new Date();
       const cutoff = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
       const cutoffStr = cutoff.toISOString().slice(0, 10);
@@ -2759,37 +2772,102 @@
         const phone = (c.phone || '').replace(/-/g, '');
         if (!phone) return;
         let isRecent = false;
-        if (c.createdAt?.seconds) {
-          isRecent = new Date(c.createdAt.seconds * 1000) >= cutoff;
-        } else if (c.date) {
-          isRecent = c.date >= cutoffStr;
-        }
+        if (c.createdAt?.seconds) isRecent = new Date(c.createdAt.seconds * 1000) >= cutoff;
+        else if (c.date) isRecent = c.date >= cutoffStr;
         if (isRecent) activePhones.add(phone);
       });
 
-      // 1년 지난 고객 중, 활성 전화번호가 아닌 것만 정리 대상
       const oldCustomers = customers.filter(c => {
         let isOld = false;
-        if (c.createdAt?.seconds) {
-          isOld = new Date(c.createdAt.seconds * 1000) < cutoff;
-        } else if (c.date) {
-          isOld = c.date < cutoffStr;
-        }
+        if (c.createdAt?.seconds) isOld = new Date(c.createdAt.seconds * 1000) < cutoff;
+        else if (c.date) isOld = c.date < cutoffStr;
         if (!isOld) return false;
         const phone = (c.phone || '').replace(/-/g, '');
-        if (phone && activePhones.has(phone)) return false; // 활성 고객 → 보호
+        if (phone && activePhones.has(phone)) return false;
         return true;
       });
+
+      // 정리완료 탭이면 아카이브 데이터 로드
+      if (tab === 'done') {
+        try {
+          const { db, collection, getDocs } = window.WORKS_DB;
+          const snap = await getDocs(collection(db, 'crm_customers_archive'));
+          _archiveCache = [];
+          snap.forEach(d => _archiveCache.push({ id: d.id, ...d.data() }));
+          _archiveCache.sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
+        } catch(e) { console.error('Archive load error:', e); _archiveCache = []; }
+      }
+
+      const existing = document.getElementById('archiveOverlay');
+      if (existing) existing.remove();
 
       const overlay = document.createElement('div');
       overlay.id = 'archiveOverlay';
       overlay.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm';
       overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
 
+      const pendingTabCls = tab === 'pending' ? 'border-b-2 border-purple-500 text-purple-600' : 'text-neutral-400 hover:text-neutral-600';
+      const doneTabCls = tab === 'done' ? 'border-b-2 border-purple-500 text-purple-600' : 'text-neutral-400 hover:text-neutral-600';
+
+      const tableHeader = `<thead class="bg-neutral-50 sticky top-0"><tr>
+        <th class="text-left p-2 font-bold text-neutral-400">No</th>
+        <th class="text-left p-2 font-bold text-neutral-400">등록일</th>
+        <th class="text-left p-2 font-bold text-neutral-400">연락처</th>
+        <th class="text-left p-2 font-bold text-neutral-400">채널</th>
+        <th class="text-left p-2 font-bold text-neutral-400">지역</th>
+        ${tab === 'done' ? '<th class="text-left p-2 font-bold text-neutral-400">정리일</th>' : ''}
+      </tr></thead>`;
+
+      let tableBody = '';
+      let actionArea = '';
+
+      if (tab === 'pending') {
+        if (oldCustomers.length > 0) {
+          tableBody = oldCustomers.slice(0, 100).map(c => `<tr class="border-t border-neutral-100">
+            <td class="p-2">${c.no || '-'}</td>
+            <td class="p-2">${c.date || (c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toISOString().slice(0, 10) : '-')}</td>
+            <td class="p-2">${(c.phone || '').replace(/(\d{3})(\d{4})(\d{4})/, '$1-****-$3')}</td>
+            <td class="p-2">${c.channel || '-'}</td>
+            <td class="p-2">${c.province || ''} ${c.district || ''}</td>
+          </tr>`).join('') + (oldCustomers.length > 100 ? `<tr><td colspan="5" class="p-2 text-center text-neutral-400">... 외 ${oldCustomers.length - 100}건</td></tr>` : '');
+          actionArea = `<button onclick="executeArchive('${cutoffStr}')" id="archiveExecBtn" class="w-full h-11 bg-purple-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-purple-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+            <i data-lucide="archive" class="w-3.5 h-3.5"></i> ${oldCustomers.length}건 아카이브 실행
+          </button>`;
+        } else {
+          tableBody = '';
+          actionArea = `<div class="text-center py-8">
+            <i data-lucide="check-circle" class="w-12 h-12 text-green-400 mx-auto mb-3"></i>
+            <p class="text-[11px] font-bold text-green-600">정리할 데이터가 없습니다</p>
+            <p class="text-[9px] text-neutral-400 mt-1">모든 고객이 1년 이내 활동 이력이 있습니다</p>
+          </div>`;
+        }
+      } else {
+        if (_archiveCache.length > 0) {
+          tableBody = _archiveCache.slice(0, 100).map(c => `<tr class="border-t border-neutral-100">
+            <td class="p-2">${c.no || '-'}</td>
+            <td class="p-2">${c.date || '-'}</td>
+            <td class="p-2">${(c.phone || '').replace(/(\d{3})(\d{4})(\d{4})/, '$1-****-$3')}</td>
+            <td class="p-2">${c.channel || '-'}</td>
+            <td class="p-2">${c.province || ''} ${c.district || ''}</td>
+            <td class="p-2 text-neutral-400">${(c.archivedAt || '').slice(0, 10)}</td>
+          </tr>`).join('') + (_archiveCache.length > 100 ? `<tr><td colspan="6" class="p-2 text-center text-neutral-400">... 외 ${_archiveCache.length - 100}건</td></tr>` : '');
+          actionArea = `<button onclick="downloadArchiveExcel()" class="w-full h-11 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+            <i data-lucide="download" class="w-3.5 h-3.5"></i> 엑셀 다운로드 (관리고객 + 정리고객)
+          </button>`;
+        } else {
+          tableBody = '';
+          actionArea = `<div class="text-center py-8">
+            <i data-lucide="archive" class="w-12 h-12 text-neutral-300 mx-auto mb-3"></i>
+            <p class="text-[11px] font-bold text-neutral-500">정리완료 고객이 없습니다</p>
+            <p class="text-[9px] text-neutral-400 mt-1">아직 고객정리를 실행한 적이 없습니다</p>
+          </div>`;
+        }
+      }
+
       overlay.innerHTML = `
-        <div class="bg-white rounded-2xl shadow-2xl w-[520px] max-h-[80vh] overflow-hidden" onclick="event.stopPropagation()">
+        <div class="bg-white rounded-2xl shadow-2xl w-[580px] max-h-[85vh] overflow-hidden flex flex-col" onclick="event.stopPropagation()">
           <div class="p-6 border-b border-neutral-100">
-            <div class="flex items-center justify-between">
+            <div class="flex items-center justify-between mb-4">
               <div>
                 <h3 class="text-sm font-black">고객정리</h3>
                 <p class="text-[9px] text-neutral-400 mt-1">개인정보 보호를 위해 1년간 연락 없는 고객 데이터를 아카이브로 이동합니다.</p>
@@ -2798,72 +2876,37 @@
                 <i data-lucide="x" class="w-5 h-5"></i>
               </button>
             </div>
+            <div class="flex gap-4">
+              <button onclick="openArchivePanel('pending')" class="pb-2 text-[10px] font-black uppercase tracking-widest transition-colors ${pendingTabCls}">
+                정리 대상 (${oldCustomers.length})
+              </button>
+              <button onclick="openArchivePanel('done')" class="pb-2 text-[10px] font-black uppercase tracking-widest transition-colors ${doneTabCls}">
+                정리 완료 (${tab === 'done' ? _archiveCache.length : '...'})
+              </button>
+            </div>
           </div>
-          <div class="p-6">
+          <div class="p-6 overflow-y-auto flex-1">
             <div class="bg-neutral-50 rounded-xl p-4 mb-4">
-              <div class="flex items-center gap-3 mb-3">
+              <div class="flex items-center gap-3">
                 <div class="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
                   <i data-lucide="calendar-clock" class="w-5 h-5 text-purple-600"></i>
                 </div>
                 <div>
                   <p class="text-[11px] font-bold">기준일: ${cutoffStr}</p>
-                  <p class="text-[9px] text-neutral-400">이후 연락 없는 고객만 정리 (최근 문의 있으면 보호)</p>
+                  <p class="text-[9px] text-neutral-400">같은 번호로 1년 이내 기록이 있는 고객은 자동 보호</p>
                 </div>
-              </div>
-              <div class="grid grid-cols-3 gap-3 text-center">
-                <div class="bg-white rounded-lg p-3">
-                  <p class="text-2xl font-black">${customers.length}</p>
-                  <p class="text-[9px] text-neutral-400 font-bold">전체 고객</p>
-                </div>
-                <div class="bg-white rounded-lg p-3">
-                  <p class="text-2xl font-black text-purple-600">${oldCustomers.length}</p>
-                  <p class="text-[9px] text-neutral-400 font-bold">정리 대상</p>
-                </div>
-                <div class="bg-white rounded-lg p-3">
-                  <p class="text-2xl font-black text-green-600">${customers.length - oldCustomers.length}</p>
-                  <p class="text-[9px] text-neutral-400 font-bold">유지</p>
+                <div class="ml-auto grid grid-cols-3 gap-2 text-center">
+                  <div><p class="text-sm font-black">${customers.length}</p><p class="text-[8px] text-neutral-400">관리</p></div>
+                  <div><p class="text-sm font-black text-purple-600">${oldCustomers.length}</p><p class="text-[8px] text-neutral-400">대상</p></div>
+                  <div><p class="text-sm font-black text-neutral-400">${tab === 'done' ? _archiveCache.length : '...'}</p><p class="text-[8px] text-neutral-400">완료</p></div>
                 </div>
               </div>
             </div>
-            ${oldCustomers.length > 0 ? `
-            <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4">
-              <p class="text-[10px] text-amber-700 font-bold flex items-center gap-1">
-                <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
-                같은 번호로 1년 이내 기록이 있는 고객은 보호됩니다. 나머지는 아카이브로 이동됩니다.
-              </p>
-            </div>
-            <div class="max-h-[200px] overflow-y-auto border border-neutral-200 rounded-xl mb-4">
-              <table class="w-full text-[9px]">
-                <thead class="bg-neutral-50 sticky top-0">
-                  <tr>
-                    <th class="text-left p-2 font-bold text-neutral-400">No</th>
-                    <th class="text-left p-2 font-bold text-neutral-400">등록일</th>
-                    <th class="text-left p-2 font-bold text-neutral-400">연락처</th>
-                    <th class="text-left p-2 font-bold text-neutral-400">채널</th>
-                    <th class="text-left p-2 font-bold text-neutral-400">지역</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${oldCustomers.slice(0, 50).map(c => `
-                  <tr class="border-t border-neutral-100">
-                    <td class="p-2">${c.no || '-'}</td>
-                    <td class="p-2">${c.date || (c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toISOString().slice(0, 10) : '-')}</td>
-                    <td class="p-2">${(c.phone || '').replace(/(\d{3})(\d{4})(\d{4})/, '$1-****-$3')}</td>
-                    <td class="p-2">${c.channel || '-'}</td>
-                    <td class="p-2">${c.province || ''} ${c.district || ''}</td>
-                  </tr>`).join('')}
-                  ${oldCustomers.length > 50 ? `<tr><td colspan="5" class="p-2 text-center text-neutral-400">... 외 ${oldCustomers.length - 50}건</td></tr>` : ''}
-                </tbody>
-              </table>
-            </div>
-            <button onclick="executeArchive('${cutoffStr}')" id="archiveExecBtn" class="w-full h-11 bg-purple-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-purple-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
-              <i data-lucide="archive" class="w-3.5 h-3.5"></i> ${oldCustomers.length}건 아카이브 실행
-            </button>` : `
-            <div class="text-center py-8">
-              <i data-lucide="check-circle" class="w-12 h-12 text-green-400 mx-auto mb-3"></i>
-              <p class="text-[11px] font-bold text-green-600">정리할 데이터가 없습니다</p>
-              <p class="text-[9px] text-neutral-400 mt-1">모든 고객 데이터가 1년 이내입니다</p>
-            </div>`}
+            ${tableBody ? `
+            <div class="max-h-[280px] overflow-y-auto border border-neutral-200 rounded-xl mb-4">
+              <table class="w-full text-[9px]">${tableHeader}<tbody>${tableBody}</tbody></table>
+            </div>` : ''}
+            ${actionArea}
           </div>
         </div>
       `;
@@ -2872,64 +2915,51 @@
     }
 
     async function executeArchive(cutoffStr) {
-      if (!confirm(`${cutoffStr} 이전 등록 고객을 아카이브로 이동합니다.\n이 작업은 되돌릴 수 없습니다. 진행하시겠습니까?`)) return;
+      if (!confirm(`${cutoffStr} 이전 등록 고객 중 최근 활동 없는 고객을 아카이브로 이동합니다.\n이 작업은 되돌릴 수 없습니다. 진행하시겠습니까?`)) return;
 
       const btn = document.getElementById('archiveExecBtn');
       if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> 처리 중...'; }
 
       try {
-        const { db, collection, addDoc, doc, deleteDoc, getDocs, query: fbQuery, serverTimestamp } = window.WORKS_DB;
+        const { db, collection, addDoc, doc, deleteDoc, getDocs } = window.WORKS_DB;
         const cutoff = new Date(cutoffStr + 'T00:00:00');
 
-        // 전체 문서 가져오기
         const snap = await getDocs(collection(db, 'crm_customers'));
         const allDocs = [];
         snap.forEach(d => allDocs.push({ id: d.id, data: d.data() }));
 
-        // 고객 단위 보호: 같은 전화번호로 1년 이내 기록이 있으면 보호
+        // 고객 단위 보호
         const recentPhones = new Set();
         allDocs.forEach(({ data }) => {
           const phone = (data.phone || '').replace(/-/g, '');
           if (!phone) return;
           let isRecent = false;
-          if (data.createdAt?.seconds) {
-            isRecent = new Date(data.createdAt.seconds * 1000) >= cutoff;
-          } else if (data.date) {
-            isRecent = data.date >= cutoffStr;
-          }
+          if (data.createdAt?.seconds) isRecent = new Date(data.createdAt.seconds * 1000) >= cutoff;
+          else if (data.date) isRecent = data.date >= cutoffStr;
           if (isRecent) recentPhones.add(phone);
         });
 
         const toArchive = allDocs.filter(({ data }) => {
           let isOld = false;
-          if (data.createdAt?.seconds) {
-            isOld = new Date(data.createdAt.seconds * 1000) < cutoff;
-          } else if (data.date) {
-            isOld = data.date < cutoffStr;
-          }
+          if (data.createdAt?.seconds) isOld = new Date(data.createdAt.seconds * 1000) < cutoff;
+          else if (data.date) isOld = data.date < cutoffStr;
           if (!isOld) return false;
           const phone = (data.phone || '').replace(/-/g, '');
           if (phone && recentPhones.has(phone)) return false;
           return true;
         });
 
-        // 청크 단위로 아카이브 이동 (쓰기 → 삭제)
         const CHUNK = 20;
         let moved = 0;
         for (let i = 0; i < toArchive.length; i += CHUNK) {
           const slice = toArchive.slice(i, i + CHUNK);
-          const promises = slice.map(async ({ id, data }) => {
-            // 1) archive 컬렉션에 복사
+          await Promise.all(slice.map(async ({ id, data }) => {
             await addDoc(collection(db, 'crm_customers_archive'), {
-              ...data,
-              archivedAt: new Date().toISOString(),
-              originalDocId: id
+              ...data, archivedAt: new Date().toISOString(), originalDocId: id
             });
-            // 2) 원본 삭제
             await deleteDoc(doc(db, 'crm_customers', id));
             moved++;
-          });
-          await Promise.all(promises);
+          }));
           if (btn) btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> ${moved}/${toArchive.length}`;
         }
 
@@ -2940,6 +2970,68 @@
         alert('고객정리 실패: ' + e.message);
         if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="archive" class="w-3.5 h-3.5"></i> 다시 시도'; }
       }
+    }
+
+    /* ── 자동 복원: 새 문의 등록 시 같은 전화번호의 아카이브 데이터 자동 복원 ── */
+    async function restoreArchivedByPhone(phone) {
+      if (!phone) return 0;
+      const cleanPhone = phone.replace(/-/g, '');
+      try {
+        const { db, collection, addDoc, doc, deleteDoc, getDocs, serverTimestamp } = window.WORKS_DB;
+        const snap = await getDocs(collection(db, 'crm_customers_archive'));
+        const toRestore = [];
+        snap.forEach(d => {
+          const data = d.data();
+          const archPhone = (data.phone || '').replace(/-/g, '');
+          if (archPhone === cleanPhone) toRestore.push({ id: d.id, data });
+        });
+        if (toRestore.length === 0) return 0;
+
+        for (const { id, data } of toRestore) {
+          const { archivedAt, originalDocId, ...restoreData } = data;
+          await addDoc(collection(db, 'crm_customers'), {
+            ...restoreData, restoredAt: new Date().toISOString(), restoredFrom: 'archive'
+          });
+          await deleteDoc(doc(db, 'crm_customers_archive', id));
+        }
+        return toRestore.length;
+      } catch(e) { console.error('Restore error:', e); return 0; }
+    }
+
+    /* ── 엑셀 다운로드 (관리고객 + 정리고객 2시트) ── */
+    async function downloadArchiveExcel() {
+      const { db, collection, getDocs } = window.WORKS_DB;
+      // 정리완료 데이터 로드
+      let archived = _archiveCache;
+      if (archived.length === 0) {
+        try {
+          const snap = await getDocs(collection(db, 'crm_customers_archive'));
+          snap.forEach(d => archived.push({ id: d.id, ...d.data() }));
+        } catch(e) { console.error(e); }
+      }
+
+      const mapRow = (c) => ({
+        'No': c.no || '', '구분': c.brand || '', '날짜': c.date || '',
+        '문의채널': c.channel || '', '개인정보 동의': c.consent || '',
+        '전화번호': c.phone || '', '이메일': c.email || '',
+        '제품군': c.product || '', '구분(개인/업체)': c.custType || '',
+        '등급': c.grade2 || c.grade || '', '상담내용': c.content || '',
+        '도/광역시': c.province || '', '시/군': c.district || '',
+        '주소': c.address || '', '지사배정': c.assignedBranch || ''
+      });
+      const colWidths = [6,8,12,10,10,14,20,10,10,8,40,10,10,25,10];
+
+      const ws1 = XLSX.utils.json_to_sheet(customers.map(mapRow));
+      ws1['!cols'] = colWidths.map(w => ({ wch: w }));
+
+      const archRows = archived.map(c => ({ ...mapRow(c), '정리일': (c.archivedAt || '').slice(0, 10) }));
+      const ws2 = XLSX.utils.json_to_sheet(archRows);
+      ws2['!cols'] = [...colWidths, 12].map(w => ({ wch: w }));
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws1, '관리고객');
+      XLSX.utils.book_append_sheet(wb, ws2, '정리고객');
+      XLSX.writeFile(wb, `CRM_전체_${new Date().toISOString().slice(0,10)}.xlsx`);
     }
 
     function downloadCRMExcel() {
