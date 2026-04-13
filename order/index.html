@@ -3048,7 +3048,7 @@
       if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> 로딩 중...'; }
 
       try {
-        const resp = await fetch('./crm_import_legacy.json');
+        const resp = await fetch('../crm_import_legacy.json');
         const data = await resp.json();
         const { db, collection, addDoc, serverTimestamp } = window.WORKS_DB;
 
