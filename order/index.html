@@ -149,6 +149,21 @@
     let unsubLeaveRequests = null;
     let leaveModalOpen = false;
 
+    // HR Issues 상태
+    let hrIssues = [];
+    let unsubHrIssues = null;
+
+    // 부서/부서원 데이터
+    const DEPARTMENTS = {
+      '경영지원': ['이한울'],
+      '브랜드전략': [],
+      '영업': [],
+      '생산': [],
+      '시공': [],
+      '디자인': [],
+      '물류': []
+    };
+
     // Showroom Reservation 상태
     let showroomReservations = [];
     let unsubShowroomReservations = null;
@@ -337,6 +352,19 @@
       });
     }
 
+    function subscribeHrIssues() {
+      const { db, collection, query, orderBy, onSnapshot } = window.WORKS_DB;
+      const issueRef = collection(db, 'works_hr_issues');
+      const q = query(issueRef, orderBy('createdAt', 'desc'));
+      unsubHrIssues = onSnapshot(q, (snapshot) => {
+        hrIssues = [];
+        snapshot.forEach(doc => {
+          hrIssues.push({ id: doc.id, ...doc.data() });
+        });
+        if (currentView === 'leave' && hrDocsTab === 'issue') throttledRender();
+      });
+    }
+
     function subscribeShowroomReservations() {
       const { db, collection, query, orderBy, onSnapshot } = window.WORKS_DB;
       const showroomRef = collection(db, 'showroom_reservations');
@@ -440,17 +468,17 @@
             ${currentType === 'hq' ? (function() {
               const now = new Date();
               const cutoff = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-              const cutoffStr = cutoff.toISOString().slice(0, 10);
+              const cutoffTime = cutoff.getTime();
               const activePhones = new Set();
               customers.forEach(c => {
                 const phone = (c.phone || '').replace(/-/g, '');
                 if (!phone) return;
-                const d = c.date || (c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toISOString().slice(0, 10) : null);
-                if (d && d >= cutoffStr) activePhones.add(phone);
+                const d = getCustomerDate(c);
+                if (d && d.getTime() >= cutoffTime) activePhones.add(phone);
               });
               const archiveCount = customers.filter(c => {
-                const d = c.date || (c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toISOString().slice(0, 10) : null);
-                if (!d || d >= cutoffStr) return false;
+                const d = getCustomerDate(c);
+                if (!d || d.getTime() >= cutoffTime) return false;
                 const phone = (c.phone || '').replace(/-/g, '');
                 if (phone && activePhones.has(phone)) return false;
                 return true;
@@ -2325,9 +2353,6 @@
                   <i data-lucide="upload" class="w-3.5 h-3.5"></i> 데이터 임포트
                 </button>` : `
                 ${currentType === 'hq' ? `
-                <button onclick="importAdditionalInquiries()" id="additionalImportBtn" class="h-10 px-5 bg-emerald-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-600 active:scale-[0.98] transition-all flex items-center gap-2">
-                  <i data-lucide="file-plus" class="w-3.5 h-3.5"></i> 추가문의 임포트
-                </button>
                 <button onclick="navigate('archived')" class="h-10 px-5 bg-neutral-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-600 active:scale-[0.98] transition-all flex items-center gap-2">
                   <i data-lucide="archive" class="w-3.5 h-3.5"></i> 정리고객
                 </button>` : ''}
@@ -2595,20 +2620,20 @@
     function getArchivedCustomers() {
       const now = new Date();
       const cutoff = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
-      const cutoffStr = cutoff.toISOString().slice(0, 10);
+      const cutoffTime = cutoff.getTime();
 
       // 같은 전화번호로 1년 이내 기록이 하나라도 있으면 보호
       const activePhones = new Set();
       customers.forEach(c => {
         const phone = (c.phone || '').replace(/-/g, '');
         if (!phone) return;
-        const d = c.date || (c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toISOString().slice(0, 10) : null);
-        if (d && d >= cutoffStr) activePhones.add(phone);
+        const d = getCustomerDate(c);
+        if (d && d.getTime() >= cutoffTime) activePhones.add(phone);
       });
 
       let list = customers.filter(c => {
-        const d = c.date || (c.createdAt?.seconds ? new Date(c.createdAt.seconds * 1000).toISOString().slice(0, 10) : null);
-        if (!d || d >= cutoffStr) return false;
+        const d = getCustomerDate(c);
+        if (!d || d.getTime() >= cutoffTime) return false;
         const phone = (c.phone || '').replace(/-/g, '');
         if (phone && activePhones.has(phone)) return false;
         return true;
@@ -3204,53 +3229,7 @@
       }
     }
 
-    // ── 추가문의 데이터 (인라인) ──
-    const ADDITIONAL_INQUIRIES = [{"no":4070,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"전화","consent":"동의","phone":"010-8953-2485","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"제주 쇼룸 방문희망","province":"","district":"","address":"","email":""},{"no":4071,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"도슨트투어","consent":"동의","phone":"010-9868-0119","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"한미화 / 010-9868-0119 /경기 용인 / 실물 O / 주거공간 / 5*2 / 풀빌드","province":"경기도","district":"용인시","address":"","email":""},{"no":4072,"brand":"테라까사","year":"2026년","month":"4월","date":"2026-04-10","channel":"자동견적","consent":"동의","phone":"010-6303-8441","product":"파고라","custType":"업체","assignedBranch":"","grade2":"","content":"9*3 LED 글라스도어","province":"경기도","district":"수원시","address":"","email":""},{"no":4073,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"홈페이지","consent":"동의","phone":"010-7579-1647","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"스테이 2950*3000 차콜 전동 견적 요청, 데크 위 설치 예정","province":"경기도","district":"용인시","address":"대지로 465-54","email":"heari0331@naver.com"},{"no":4074,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"메일","consent":"비동의","phone":"031-651-4478","product":"파고라","custType":"업체","assignedBranch":"본사","grade2":"C","content":"서우조경) 브레인시티 5BL 대광로제비앙 아파트 신축공사 견적 문의","province":"","district":"","address":"","email":""},{"no":4075,"brand":"테라까사","year":"2026년","month":"4월","date":"2026-04-10","channel":"자동견적","consent":"동의","phone":"010-9985-3267","product":"파고라","custType":"일반","assignedBranch":"","grade2":"","content":"수동 4*3","province":"전라북도","district":"완주군","address":"","email":""},{"no":4076,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"전화","consent":"동의","phone":"010-3832-8687","product":"파고라","custType":"일반","assignedBranch":"부산지사","grade2":"C","content":"데크 위 파고라 설치 문의","province":"경상남도","district":"사천시","address":"","email":""},{"no":4077,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"도슨트투어","consent":"동의","phone":"010-5331-1043","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"채인석 / 010-5331-1043 / 전북 군산 / 실물 X / 공공프로젝트 / 2.2*6 / 풀빌드","province":"전라북도","district":"군산시","address":"","email":""},{"no":4078,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"도슨트투어","consent":"동의","phone":"010-5583-4701","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"민권식 / 010-5583-4701 / 경기 성남 / 실물 O / 주거공간 / 3.5*2.2 / 파고라 + 글라스","province":"경기도","district":"성남시","address":"","email":""},{"no":4079,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"도슨트투어","consent":"동의","phone":"010-8922-6663","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"조종섭 / 010-8922-6663 / 인천 부평 / 실물 X / 상업공간 / 3*6 / 파고라","province":"인천광역시","district":"부평구","address":"","email":""},{"no":4080,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"홈페이지","consent":"동의","phone":"010-6250-4099","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"고객명 : 유시원 / 전동형 파고라 상담 요청","province":"","district":"","address":"","email":""},{"no":4081,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"메일","consent":"비동의","phone":"010-3149-8077","product":"파고라","custType":"업체","assignedBranch":"본사","grade2":"C","content":"건축사사무소그룹타스 최하람사원) 정자 철거하고 5000*6000 파고라 관급, 사급으로 나누어 견적 요청","province":"","district":"","address":"","email":""},{"no":4082,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"도슨트투어","consent":"동의","phone":"010-5855-0138","product":"파고라","custType":"일반","assignedBranch":"부산지사","grade2":"C","content":"김남훈 / 010-5855-0138 / 경북 영천 / 실물 X / 주거공간 / 4*10 / 풀빌드","province":"경상북도","district":"영천군","address":"","email":""},{"no":4083,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"전화","consent":"동의","phone":"010-3730-0473","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"도슨트 이력) 파고라 3*5 전동\n4면 유리 마감 (글라스폴딩)\n데크 3.6*5.4\n견적 송부 예정","province":"","district":"","address":"","email":""},{"no":4084,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"도슨트투어","consent":"동의","phone":"010-2509-9648","product":"파고라","custType":"일바","assignedBranch":"부산지사","grade2":"C","content":"두번째) 김재수/ 010-2509-9648 / 경북 김천 / 실물 O / 주거공간 / 1.8*5 / 파고라 + 글라스","province":"경상북도","district":"김천시","address":"","email":""},{"no":4085,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-10","channel":"도슨트투어","consent":"동의","phone":"010-2642-1656","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"김성목 / 010-2642-1656 / 인천 강화 / 실물 X / 주거공간 / 3*4 / 파고라 + 글라스","province":"인천광역시","district":"강화군","address":"","email":""},{"no":4086,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-11","channel":"도슨트투어","consent":"동의","phone":"010-3730-0473","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"중복","content":"두번째) 김성기 / 010-3730-0473 / 경기 양평 / 실물 X / 주거공간 / 3*5 / 풀빌드","province":"경기도","district":"양평군","address":"","email":""},{"no":4087,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-11","channel":"도슨트투어","consent":"동의","phone":"010-2055-6212","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"이종례 / 010-2055-6212 / 경기 여주 / 실물 X / 주저공간 / 3*4 / 풀빌드","province":"경기도","district":"여주시","address":"","email":""},{"no":4088,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-11","channel":"도슨트투어","consent":"동의","phone":"010-3791-0267","product":"파고라","custType":"일반","assignedBranch":"부산지사","grade2":"C","content":"조외숙 / 010-3791-0267 / 경남 합천 / 실물 X / 주거공간 / 3.3*4 / 풀빌드","province":"경상남도","district":"합천군","address":"","email":""},{"no":4089,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-11","channel":"도슨트투어","consent":"동의","phone":"010-5162-6480","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"최성훈 / 010-5162-6480 / 제주 서귀포 / 실물 X / 호텔, 리조트, 카페 / 2.3*4.3 / 파고라","province":"제주특별자치도","district":"서귀포시","address":"","email":""},{"no":4090,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-11","channel":"도슨트투어","consent":"동의","phone":"010-2008-6066","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"김미향 / 010-2008-6066 / 경기 양평 / 실물 X / 주거공간 / 4*6 / 파고라 + 데크","province":"경기도","district":"양평군","address":"","email":""},{"no":4091,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-11","channel":"도슨트투어","consent":"동의","phone":"010-8009-0909","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"박태선 / 010-8009-0909 / 경기 용인 / 실물 X / 호텔, 리조트, 카페 / 5*6 / 파고라 + 데크","province":"경기도","district":"용인시","address":"","email":""},{"no":4092,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-11","channel":"도슨트투어","consent":"동의","phone":"010-9395-2520","product":"파고라","custType":"일반","assignedBranch":"부산지사","grade2":"중복","content":"두번째, 4번함) 이정주 / 010-9395-2520 / 경북 칠곡 / 실물 O / 상업공간 / 3*4 / 파고라","province":"경상북도","district":"칠곡군","address":"","email":""},{"no":4093,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-11","channel":"도슨트투어","consent":"동의","phone":"010-2821-2821","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"정진원 / 010-2821-2821 / 경기 평택/ 실물 X / 주거공간 / 2.5*3 / 파고라 +글라스","province":"경기도","district":"평택시","address":"","email":""},{"no":4094,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-11","channel":"도슨트투어","consent":"동의","phone":"010-9575-5464","product":"파고라","custType":"일반","assignedBranch":"부산지사","grade2":"C","content":"양은진 / 010-9575-5464 / 울산 중구 / 실물 X / 주거공간 / 3*6.7 / 풀빌드","province":"울산광역시","district":"중구","address":"","email":""},{"no":4095,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"도슨트투어","consent":"동의","phone":"010-4599-2399","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"박종덕 / 010-4599-2399 / 경기 광명 / 실물 X / 공공프로젝트 / 4*8 / 파고라","province":"경기도","district":"광명시","address":"","email":""},{"no":4096,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"도슨트투어","consent":"동의","phone":"010-3729-7297","product":"파고라","custType":"일반","assignedBranch":"부산지사","grade2":"C","content":"백필두 / 010-3729-7297 / 경남 거창 / 실물 X / 주거공간 / 3.5*5 / 파고라 + 글라스","province":"경상남도","district":"거창군","address":"","email":""},{"no":4097,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"도슨트투어","consent":"동의","phone":"010-7275-0552","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"이은희 / 010-7275-0552 / 경기 용인 / 실물 X / 주거공간 / 3*3 / 파고라","province":"경기도","district":"용인시","address":"","email":""},{"no":4098,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"도슨트투어","consent":"동의","phone":"010-3842-3446","product":"파고라","custType":"일반","assignedBranch":"부산지사","grade2":"C","content":"노제호 / 010-3842-3446 / 경남 김해 / 실물 X / 주거공간 / 5*6 / 풀빌드","province":"경상남도","district":"김해시","address":"","email":""},{"no":4099,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"도슨트투어","consent":"동의","phone":"010-6436-7094","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"중복","content":"두번째) 임명규 / 010-6436-7094 / 전북 전주 / 실물 O / 주거공간 / 2.5*5 / 파고라","province":"전라북도","district":"전주시","address":"","email":""},{"no":4100,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"도슨트투어","consent":"동의","phone":"010-4731-9942","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"이영수 / 010-4731-9942 / 제주 서귀포 / 실물 O / 주거공간 / 3*6 / 파고라 + 글라스","province":"제주특별자치도","district":"서귀포시","address":"","email":""},{"no":4101,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"도슨트투어","consent":"동의","phone":"010-8827-1110","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"엔 / 010-8827-1110 / 충북 청주 / 실물 X / 주거공간 / 3*2 / 파고라 + 글라스","province":"충청북도","district":"청주시","address":"","email":""},{"no":4102,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-11","channel":"홈페이지","consent":"동의","phone":"010-5436-7370","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"안태현, 스테이 전동 12000*20000 견적 요청 / 카페 건물 앞 천연잔디마당 설치 예정, T 자 형태","province":"충청남도","district":"홍성시","address":"내포신도시 인근","email":"chhol1@naver.com"},{"no":4103,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"홈페이지","consent":"동의","phone":"010-9102-0985","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"임재무, 에어리어 3900*5710 견적 요청 / 6층 루프탑","province":"서울특별시","district":"용산구","address":"이태원동","email":"dlawoan0209@naver.com"},{"no":4104,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"홈페이지","consent":"동의","phone":"010-5095-9051","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"고객명 : 박찬복 / 수동형 파고라 상담 요청","province":"","district":"","address":"","email":""},{"no":4105,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"스마트로그","consent":"동의","phone":"010-5293-4744","product":"데크","custType":"일반","assignedBranch":"본사","grade2":"C","content":"테라스 9.5평 전체시공 가격 문의","province":"","district":"","address":"","email":""},{"no":4106,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-12","channel":"폼","consent":"동의","phone":"010-9136-7773","product":"파고라","custType":"일반","assignedBranch":"부산지사","grade2":"C","content":"테라스 공간 시스템파고라 + 글라스 + 데크 상담 요청","province":"경상남도","district":"창원특례시","address":"","email":""},{"no":4107,"brand":"테라까사","year":"2026년","month":"4월","date":"2026-04-10","channel":"자동견적","consent":"동의","phone":"010-4445-4475","product":"파고라","custType":"일반","assignedBranch":"","grade2":"","content":"수동 5*3 데크","province":"인천광역시","district":"강화군","address":"","email":""},{"no":4108,"brand":"테라까사","year":"2026년","month":"4월","date":"2026-04-10","channel":"자동견적","consent":"동의","phone":"010-3384-0284","product":"파고라","custType":"일반","assignedBranch":"","grade2":"","content":"전동 4*3 LED 글라스도어","province":"경기도","district":"양평군","address":"","email":""},{"no":4109,"brand":"테라까사","year":"2026년","month":"4월","date":"2026-04-11","channel":"자동견적","consent":"동의","phone":"010-9986-5733","product":"파고라","custType":"일반","assignedBranch":"","grade2":"","content":"수동 4.2*130","province":"서울특별시","district":"관악구","address":"","email":""},{"no":4110,"brand":"테라까사","year":"2026년","month":"4월","date":"2026-04-11","channel":"자동견적","consent":"동의","phone":"010-2224-0206","product":"파고라","custType":"일반","assignedBranch":"","grade2":"","content":"전동 14*3 글라스도어","province":"서울특별시","district":"강북구","address":"","email":""},{"no":4111,"brand":"테라까사","year":"2026년","month":"4월","date":"2026-04-11","channel":"자동견적","consent":"동의","phone":"010-3010-5831","product":"파고라","custType":"일반","assignedBranch":"","grade2":"","content":"수동 6.4*3.5 글라스도어","province":"경상남도","district":"의령군","address":"","email":""},{"no":4112,"brand":"테라까사","year":"2026년","month":"4월","date":"2026-04-12","channel":"자동견적","consent":"동의","phone":"010-7274-2474","product":"파고라","custType":"일반","assignedBranch":"","grade2":"","content":"전동 5*6 LED 글라스도어 데크 / 빠삼요 : 애견 까페 실외 공간으로 쓰려고 예상 하는 공간 입니다 최소 10평-20평 생각 하는데 예상 비용 궁금 합니다 데크는 아직 미정 인동 잔디를 깔 수도 있고 데크를 할지도 아직은 미정 입니다","province":"층청남도","district":"당진시","address":"","email":""},{"no":4113,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-13","channel":"전화","consent":"동의","phone":"010-6342-9494","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"경기 용인, 아파트 베란다 3*15 공간 있는데, 파고라 설치가 불법인지 문의","province":"경기도","district":"용인시","address":"","email":""},{"no":4114,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-13","channel":"전화","consent":"동의","phone":"010-3680-0516","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"홍성군청) 시스템파고라 관련 상담 요청","province":"충청남도","district":"홍성시","address":"","email":""},{"no":4115,"brand":"테라까사","year":"2026년","month":"4월","date":"2026-04-13","channel":"자동견적","consent":"동의","phone":"010-3613-7278","product":"파고라","custType":"일반","assignedBranch":"","grade2":"","content":"전동 7*4 LED 글라스도어","province":"전라남도","district":"함평군","address":"","email":""},{"no":4116,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-13","channel":"홈페이지","consent":"동의","phone":"010-3252-1950","product":"데크","custType":"일반","assignedBranch":"본사","grade2":"C","content":"고객명 : 이현정 / 데크 상담 요청","province":"","district":"","address":"","email":""},{"no":4117,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-13","channel":"도슨트투어","consent":"동의","phone":"010-4530-7476","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"코빌, 도슨트 이력 있음) 안영환 / 010-4530-7476 / 서울 동대문구 / 실물 O / 주거공간 / 4*6 / 파고라 + 글라스","province":"서울특별시","district":"동대문구","address":"","email":""},{"no":4118,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-13","channel":"도슨트투어","consent":"동의","phone":"010-7600-7030","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"전종기 / 010-7600-7030 / 경기 수원 / 실물 X / 주거공간 / 2.5*3.5 / 파고라","province":"경기도","district":"수원시","address":"","email":""},{"no":4119,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-13","channel":"도슨트투어","consent":"동의","phone":"010-3428-9876","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"C","content":"원상기 / 010-3428-9876 / 충북 충주 / 실물 O / 주거공간 / 3.5*3.5 / 파고라","province":"충청북도","district":"충주시","address":"","email":""},{"no":4122,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-13","channel":"도슨트투어","consent":"동의","phone":"010-2509-9648","product":"파고라","custType":"일반","assignedBranch":"부산지사","grade2":"중복","content":"김재수 / 010-2509-9648 / 경북 김천 / 실물 X / 주거공간 / 1.5*5 / 파고라 + 글라스","province":"경상북도","district":"김천시","address":"","email":""},{"no":4123,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-13","channel":"블로그","consent":"비동의","phone":"","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"D","content":"용인 개인주택처럼 3*4 사이즈로 거실창 앞으로 만들면 얼만인지","province":"","district":"","address":"","email":""},{"no":4124,"brand":"오스카","year":"2026년","month":"4월","date":"2026-04-13","channel":"블로그","consent":"비동의","phone":"","product":"파고라","custType":"일반","assignedBranch":"본사","grade2":"D","content":"아파트 테라스 10M 가까이 되는데 가격 문의, 아랫층 누수가 되어 아예 막아버릴까 생각중","province":"전라남도","district":"여수시","address":"","email":""}];
-
-    async function importAdditionalInquiries() {
-      if (!confirm('추가문의 53건을 Firestore에 임포트합니다.\n기존 데이터와 중복 여부(no 기준)를 확인 후 진행합니다.\n계속하시겠습니까?')) return;
-      const btn = document.getElementById('additionalImportBtn');
-      if (btn) { btn.disabled = true; btn.textContent = '임포트 중...'; }
-
-      try {
-        const data = ADDITIONAL_INQUIRIES;
-        const { db, collection, addDoc, serverTimestamp } = window.WORKS_DB;
-
-        // 기존 no 목록으로 중복 체크
-        const existingNos = new Set(customers.map(c => c.no));
-        const newRecords = data.filter(r => !existingNos.has(r.no));
-
-        if (newRecords.length === 0) {
-          alert('모든 데이터가 이미 존재합니다. 임포트할 신규 건이 없습니다.');
-          if (btn) { btn.disabled = false; btn.textContent = '추가문의 임포트'; }
-          return;
-        }
-
-        let imported = 0;
-        const total = newRecords.length;
-        const CHUNK = 20;
-
-        for (let i = 0; i < total; i += CHUNK) {
-          const slice = newRecords.slice(i, i + CHUNK);
-          const promises = slice.map(record => {
-            return addDoc(collection(db, 'crm_customers'), {
-              ...record,
-              createdAt: serverTimestamp()
-            });
-          });
-          await Promise.all(promises);
-          imported += slice.length;
-          if (btn) btn.textContent = imported + '/' + total + ' (' + Math.round(imported/total*100) + '%)';
-        }
-
-        alert('임포트 완료! ' + imported + '건 저장됨 (중복 ' + (data.length - newRecords.length) + '건 제외)');
-        if (btn) { btn.textContent = '완료'; btn.disabled = true; }
-      } catch(e) {
-        console.error('Additional import error:', e);
-        alert('임포트 실패: ' + e.message);
-        if (btn) { btn.disabled = false; btn.textContent = '추가문의 임포트'; }
-      }
-    }
+    // (추가문의 임포트 완료 — 코드 제거됨)
 
     // 지사이관 + 지역 오타 동기화 (Firestore 기존 데이터 업데이트)
     /* ── 고객정리 (1년 경과 데이터 아카이빙) ── */
@@ -3261,27 +3240,21 @@
       tab = tab || 'pending';
       const now = new Date();
       const cutoff = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+      const cutoffTime = cutoff.getTime();
       const cutoffStr = cutoff.toISOString().slice(0, 10);
-
-      // 날짜 판정 헬퍼: date 필드(실제 문의일) 우선, 없으면 createdAt
-      const getCustDate = (c) => {
-        if (c.date) return c.date;
-        if (c.createdAt?.seconds) return new Date(c.createdAt.seconds * 1000).toISOString().slice(0, 10);
-        return null;
-      };
 
       // 고객 단위 보호: 같은 전화번호로 1년 이내 기록이 하나라도 있으면 전체 보호
       const activePhones = new Set();
       customers.forEach(c => {
         const phone = (c.phone || '').replace(/-/g, '');
         if (!phone) return;
-        const d = getCustDate(c);
-        if (d && d >= cutoffStr) activePhones.add(phone);
+        const d = getCustomerDate(c);
+        if (d && d.getTime() >= cutoffTime) activePhones.add(phone);
       });
 
       const oldCustomers = customers.filter(c => {
-        const d = getCustDate(c);
-        if (!d || d >= cutoffStr) return false;
+        const d = getCustomerDate(c);
+        if (!d || d.getTime() >= cutoffTime) return false;
         const phone = (c.phone || '').replace(/-/g, '');
         if (phone && activePhones.has(phone)) return false;
         return true;
@@ -3461,25 +3434,19 @@
         const allDocs = [];
         snap.forEach(d => allDocs.push({ id: d.id, data: d.data() }));
 
-        // 날짜 판정: date 필드 우선
-        const getDocDate = (data) => {
-          if (data.date) return data.date;
-          if (data.createdAt?.seconds) return new Date(data.createdAt.seconds * 1000).toISOString().slice(0, 10);
-          return null;
-        };
-
         // 고객 단위 보호
+        const cutoffTime = cutoff.getTime();
         const recentPhones = new Set();
         allDocs.forEach(({ data }) => {
           const phone = (data.phone || '').replace(/-/g, '');
           if (!phone) return;
-          const d = getDocDate(data);
-          if (d && d >= cutoffStr) recentPhones.add(phone);
+          const d = getCustomerDate(data);
+          if (d && d.getTime() >= cutoffTime) recentPhones.add(phone);
         });
 
         const toArchive = allDocs.filter(({ data }) => {
-          const d = getDocDate(data);
-          if (!d || d >= cutoffStr) return false;
+          const d = getCustomerDate(data);
+          if (!d || d.getTime() >= cutoffTime) return false;
           const phone = (data.phone || '').replace(/-/g, '');
           if (phone && recentPhones.has(phone)) return false;
           return true;
@@ -4716,26 +4683,55 @@
         </div>
       `;
 
+      // 이슈 목록 테이블 HTML
+      const issueTableHTML = hrIssues.length > 0 ? hrIssues.map(function(iss) {
+        const statusCls = iss.status === '완료' ? 'bg-green-100 text-green-700 border-green-300' :
+                          iss.status === '진행중' ? 'bg-blue-100 text-blue-700 border-blue-300' :
+                          'bg-yellow-100 text-yellow-700 border-yellow-300';
+        const hasSimalseo = iss.simalseo ? true : false;
+        const hasSayuseo = iss.sayuseo ? true : false;
+        return '<tr class="border-b border-neutral-100 hover:bg-neutral-50">' +
+          '<td class="px-3 py-3 text-[10px] text-neutral-400">' + (iss.date || '-') + '</td>' +
+          '<td class="px-3 py-3 text-[10px] font-bold">' + (iss.department || '-') + '</td>' +
+          '<td class="px-3 py-3 text-[10px] font-bold">' + (iss.target || '-') + '</td>' +
+          '<td class="px-3 py-3 text-[10px] font-black">' + (iss.title || '-') + '</td>' +
+          '<td class="px-3 py-3 text-[10px] text-neutral-500 max-w-[200px]"><div class="truncate" title="' + (iss.content || '').replace(/"/g, '&quot;') + '">' + (iss.content || '-') + '</div></td>' +
+          '<td class="px-3 py-3 text-[10px]">' + (iss.author || '-') + '</td>' +
+          '<td class="px-3 py-3"><span class="text-[9px] px-2 py-0.5 rounded border ' + statusCls + '">' + (iss.status || '등록') + '</span></td>' +
+          '<td class="px-3 py-3 text-center"><div class="flex items-center gap-1 justify-center">' +
+            '<button onclick="openResponseDoc(\'' + iss.id + '\', \'시말서\')" class="px-2 py-1 rounded-lg text-[8px] font-black transition-all ' + (hasSimalseo ? 'bg-red-100 text-red-600 border border-red-200' : 'border border-neutral-200 text-neutral-400 hover:border-red-300 hover:text-red-500') + '">' + (hasSimalseo ? '시말서 확인' : '시말서 작성') + '</button>' +
+            '<button onclick="openResponseDoc(\'' + iss.id + '\', \'사유서\')" class="px-2 py-1 rounded-lg text-[8px] font-black transition-all ' + (hasSayuseo ? 'bg-orange-100 text-orange-600 border border-orange-200' : 'border border-neutral-200 text-neutral-400 hover:border-orange-300 hover:text-orange-500') + '">' + (hasSayuseo ? '사유서 확인' : '사유서 작성') + '</button>' +
+          '</div></td></tr>';
+      }).join('') : '<tr><td colspan="8" class="px-6 py-12 text-center text-neutral-300 text-[10px]">등록된 이슈가 없습니다.</td></tr>';
+
       const issueContent = `
-        <div class="mb-6">
-          <button onclick="openHRDocForm('issue')" class="bg-black text-white rounded-xl px-4 py-3 text-[11px] font-black uppercase tracking-widest hover:bg-neutral-800 transition-colors">+ 새 문서 작성</button>
+        <div class="flex items-center justify-between mb-6">
+          <div>
+            <p class="text-[10px] text-neutral-400">총 <span class="font-black text-black">${hrIssues.length}</span>건</p>
+          </div>
+          <button onclick="openIssueForm()" class="bg-black text-white rounded-xl px-4 py-3 text-[11px] font-black uppercase tracking-widest hover:bg-neutral-800 transition-colors">+ 새 이슈 작성</button>
         </div>
-        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-8">
-          <div onclick="openHRDocForm('시말서')" class="bg-white border border-neutral-200 rounded-xl p-4 hover:border-black transition-all cursor-pointer text-center">
-            <i data-lucide="file-warning" class="w-6 h-6 text-red-400 mx-auto mb-2"></i>
-            <p class="text-[10px] font-black">시말서</p>
+
+        <div class="border border-neutral-200 rounded-2xl overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-[11px] border-collapse">
+              <thead>
+                <tr class="bg-neutral-50 border-b border-neutral-200">
+                  <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">날짜</th>
+                  <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">부서</th>
+                  <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">대상자</th>
+                  <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">제목</th>
+                  <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">내용</th>
+                  <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">작성자</th>
+                  <th class="px-3 py-3 text-left text-[9px] font-black text-neutral-400 uppercase tracking-widest">상태</th>
+                  <th class="px-3 py-3 text-center text-[9px] font-black text-neutral-400 uppercase tracking-widest">대응문서</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${issueTableHTML}
+              </tbody>
+            </table>
           </div>
-          <div onclick="openHRDocForm('사유서')" class="bg-white border border-neutral-200 rounded-xl p-4 hover:border-black transition-all cursor-pointer text-center">
-            <i data-lucide="file-text" class="w-6 h-6 text-orange-400 mx-auto mb-2"></i>
-            <p class="text-[10px] font-black">사유서</p>
-          </div>
-          <div onclick="openHRDocForm('이슈기록')" class="bg-white border border-neutral-200 rounded-xl p-4 hover:border-black transition-all cursor-pointer text-center">
-            <i data-lucide="alert-circle" class="w-6 h-6 text-yellow-500 mx-auto mb-2"></i>
-            <p class="text-[10px] font-black">이슈 기록</p>
-          </div>
-        </div>
-        <div id="hrDocsList" class="space-y-3">
-          <p class="text-[10px] text-neutral-300 py-4">등록된 인사 문서가 없습니다. (Firestore 연동 예정)</p>
         </div>
       `;
 
@@ -4786,7 +4782,7 @@
                 <i data-lucide="calendar-off" class="w-3.5 h-3.5 inline-block mr-1"></i>연차 · 휴가
               </button>
               <button onclick="hrDocsTab='issue'; render();" class="pb-3 text-[11px] font-black uppercase tracking-widest transition-all ${hrDocsTab === 'issue' ? tabActive : tabInactive}">
-                <i data-lucide="file-warning" class="w-3.5 h-3.5 inline-block mr-1"></i>시말 · 사유 · 이슈
+                <i data-lucide="alert-circle" class="w-3.5 h-3.5 inline-block mr-1"></i>이슈현황
               </button>
               <button onclick="hrDocsTab='report'; render();" class="pb-3 text-[11px] font-black uppercase tracking-widest transition-all ${hrDocsTab === 'report' ? tabActive : tabInactive}">
                 <i data-lucide="clipboard-list" class="w-3.5 h-3.5 inline-block mr-1"></i>외근 · 보고서
@@ -4845,6 +4841,82 @@
           </div>
 
           <!-- HR 문서 작성 모달 -->
+          <!-- 이슈 작성 모달 -->
+          <div id="issueFormModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+            <div class="bg-white rounded-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-black">새 이슈 작성</h3>
+                <button onclick="closeIssueForm()" class="text-neutral-400 hover:text-black">
+                  <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+              </div>
+              <div class="space-y-4">
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">작성자</label>
+                  <input type="text" id="issueAuthor" value="${currentManager}" class="input-base mt-1" readonly>
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">부서</label>
+                  <select id="issueDept" class="input-base mt-1" onchange="updateIssueMemberList()">
+                    <option value="">부서 선택</option>
+                    ${Object.keys(DEPARTMENTS).map(d => '<option value="' + d + '">' + d + '</option>').join('')}
+                  </select>
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">대상자</label>
+                  <select id="issueTarget" class="input-base mt-1">
+                    <option value="">대상자 선택 (부서를 먼저 선택하세요)</option>
+                  </select>
+                  <input type="text" id="issueTargetManual" placeholder="목록에 없으면 직접 입력" class="input-base mt-1">
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">날짜</label>
+                  <input type="date" id="issueDate" class="input-base mt-1">
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">제목</label>
+                  <input type="text" id="issueTitle" placeholder="이슈 제목" class="input-base mt-1">
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">내용</label>
+                  <textarea id="issueContent" placeholder="이슈 내용을 상세히 입력하세요" class="input-base mt-1" rows="5"></textarea>
+                </div>
+                <div class="flex gap-2">
+                  <button onclick="closeIssueForm()" class="flex-1 bg-neutral-200 text-black rounded-xl py-3 font-black uppercase tracking-widest hover:bg-neutral-300 transition-colors text-[11px]">취소</button>
+                  <button onclick="saveIssue()" class="flex-1 bg-black text-white rounded-xl py-3 font-black uppercase tracking-widest hover:bg-neutral-800 transition-colors text-[11px]">등록</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 시말서/사유서 작성 모달 -->
+          <div id="responseDocModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+            <div class="bg-white rounded-2xl p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-black" id="responseDocTitle">시말서 작성</h3>
+                <button onclick="closeResponseDoc()" class="text-neutral-400 hover:text-black">
+                  <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+              </div>
+              <div id="responseDocInfo" class="bg-neutral-50 rounded-xl p-4 mb-4 text-[10px]"></div>
+              <div class="space-y-4">
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">작성자 (대상자)</label>
+                  <input type="text" id="responseAuthor" class="input-base mt-1">
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">내용</label>
+                  <textarea id="responseContent" placeholder="내용을 작성하세요" class="input-base mt-1" rows="8"></textarea>
+                </div>
+                <div class="flex gap-2">
+                  <button onclick="closeResponseDoc()" class="flex-1 bg-neutral-200 text-black rounded-xl py-3 font-black uppercase tracking-widest hover:bg-neutral-300 transition-colors text-[11px]">취소</button>
+                  <button onclick="saveResponseDoc()" class="flex-1 bg-black text-white rounded-xl py-3 font-black uppercase tracking-widest hover:bg-neutral-800 transition-colors text-[11px]">저장</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 기존 HR Doc 모달 (보고서용 유지) -->
           <div id="hrDocModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm">
             <div class="bg-white rounded-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
               <div class="flex items-center justify-between mb-4">
@@ -4948,6 +5020,146 @@
     }
 
     // ===== HR DOCS 문서 관련 함수 =====
+    // ===== 이슈현황 함수 =====
+    function openIssueForm() {
+      const modal = document.getElementById('issueFormModal');
+      if (!modal) return;
+      modal.classList.remove('hidden');
+      document.getElementById('issueDate').value = new Date().toISOString().split('T')[0];
+      document.getElementById('issueAuthor').value = currentManager || '';
+      lucide.createIcons();
+    }
+
+    function closeIssueForm() {
+      const modal = document.getElementById('issueFormModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function updateIssueMemberList() {
+      const dept = document.getElementById('issueDept').value;
+      const sel = document.getElementById('issueTarget');
+      sel.innerHTML = '<option value="">대상자 선택</option>';
+      if (dept && DEPARTMENTS[dept]) {
+        DEPARTMENTS[dept].forEach(function(m) {
+          sel.innerHTML += '<option value="' + m + '">' + m + '</option>';
+        });
+        sel.innerHTML += '<option value="__manual__">직접 입력</option>';
+      }
+    }
+
+    async function saveIssue() {
+      const author = document.getElementById('issueAuthor')?.value;
+      const dept = document.getElementById('issueDept')?.value;
+      const targetSel = document.getElementById('issueTarget')?.value;
+      const targetManual = document.getElementById('issueTargetManual')?.value;
+      const target = (targetSel === '__manual__' || !targetSel) ? targetManual : targetSel;
+      const date = document.getElementById('issueDate')?.value;
+      const title = document.getElementById('issueTitle')?.value;
+      const content = document.getElementById('issueContent')?.value;
+
+      if (!dept || !target || !title || !content) {
+        alert('부서, 대상자, 제목, 내용은 필수 항목입니다.');
+        return;
+      }
+
+      try {
+        const { db, collection, addDoc, serverTimestamp } = window.WORKS_DB;
+        await addDoc(collection(db, 'works_hr_issues'), {
+          author: author || currentManager || '',
+          department: dept,
+          target: target,
+          date: date || '',
+          title: title,
+          content: content,
+          status: '등록',
+          simalseo: null,
+          sayuseo: null,
+          createdAt: serverTimestamp()
+        });
+        closeIssueForm();
+        alert('이슈가 등록되었습니다.');
+      } catch(e) {
+        console.error('Issue save error:', e);
+        alert('저장 실패: ' + e.message);
+      }
+    }
+
+    // 시말서/사유서 열기
+    let _responseIssueId = '';
+    let _responseDocType = '';
+
+    function openResponseDoc(issueId, docType) {
+      _responseIssueId = issueId;
+      _responseDocType = docType;
+
+      const issue = hrIssues.find(function(i) { return i.id === issueId; });
+      if (!issue) { alert('이슈를 찾을 수 없습니다.'); return; }
+
+      const modal = document.getElementById('responseDocModal');
+      if (!modal) return;
+      modal.classList.remove('hidden');
+
+      const titleEl = document.getElementById('responseDocTitle');
+      const infoEl = document.getElementById('responseDocInfo');
+      const authorEl = document.getElementById('responseAuthor');
+      const contentEl = document.getElementById('responseContent');
+
+      if (titleEl) titleEl.textContent = docType + (docType === '시말서' && issue.simalseo ? ' 확인' : docType === '사유서' && issue.sayuseo ? ' 확인' : ' 작성');
+
+      if (infoEl) {
+        infoEl.innerHTML = '<p class="font-black mb-1">관련 이슈</p>' +
+          '<p><span class="text-neutral-400">제목:</span> ' + (issue.title || '-') + '</p>' +
+          '<p><span class="text-neutral-400">부서:</span> ' + (issue.department || '-') + ' · <span class="text-neutral-400">대상자:</span> ' + (issue.target || '-') + '</p>' +
+          '<p><span class="text-neutral-400">날짜:</span> ' + (issue.date || '-') + '</p>' +
+          '<p class="mt-1 text-neutral-500">' + (issue.content || '') + '</p>';
+      }
+
+      // 기존 데이터가 있으면 표시
+      const existing = docType === '시말서' ? issue.simalseo : issue.sayuseo;
+      if (existing) {
+        if (authorEl) authorEl.value = existing.author || '';
+        if (contentEl) contentEl.value = existing.content || '';
+      } else {
+        if (authorEl) authorEl.value = issue.target || '';
+        if (contentEl) contentEl.value = '';
+      }
+
+      lucide.createIcons();
+    }
+
+    function closeResponseDoc() {
+      const modal = document.getElementById('responseDocModal');
+      if (modal) modal.classList.add('hidden');
+      _responseIssueId = '';
+      _responseDocType = '';
+    }
+
+    async function saveResponseDoc() {
+      if (!_responseIssueId || !_responseDocType) return;
+      const author = document.getElementById('responseAuthor')?.value;
+      const content = document.getElementById('responseContent')?.value;
+
+      if (!author || !content) { alert('작성자와 내용을 입력하세요.'); return; }
+
+      try {
+        const { db, doc, updateDoc, serverTimestamp } = window.WORKS_DB;
+        const field = _responseDocType === '시말서' ? 'simalseo' : 'sayuseo';
+        const updateData = {};
+        updateData[field] = {
+          author: author,
+          content: content,
+          writtenAt: new Date().toISOString()
+        };
+        updateData['status'] = '진행중';
+        await updateDoc(doc(db, 'works_hr_issues', _responseIssueId), updateData);
+        closeResponseDoc();
+        alert(_responseDocType + '이(가) 저장되었습니다.');
+      } catch(e) {
+        console.error('Response doc save error:', e);
+        alert('저장 실패: ' + e.message);
+      }
+    }
+
     function openHRDocForm(type) {
       const modal = document.getElementById('hrDocModal');
       if (!modal) return;
@@ -5110,6 +5322,7 @@
           subscribeCustomers();
           subscribeSchedules();
           subscribeLeaveRequests();
+          subscribeHrIssues();
           subscribeShowroomReservations();
           render();
         }
