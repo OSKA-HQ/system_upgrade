@@ -149,6 +149,15 @@
     let unsubShowroomReservations = null;
     let showroomFilter = '전체';
 
+    // 지사 자동배정 매핑 (지역 → 지사)
+    // 현재 부산지사만 운영. 전라/제주/충청/서울 등은 본사 배정
+    const BRANCH_MAP = {
+      '부산': '부산지사', '울산': '부산지사', '대구': '부산지사', '경남': '부산지사', '경북': '부산지사'
+    };
+    function getAutoAssignedBranch(province) {
+      return BRANCH_MAP[province] || '본사';
+    }
+
     // 지역 데이터 (시/도, 시/군/구)
     const REGIONS_DATA = {
       '서울': ['강남구', '강동구', '강북구', '강서구', '관악구', '광진구', '구로구', '금천구', '노원구', '도봉구', '동대문구', '동작구', '마포구', '서대문구', '서초구', '성동구', '성북구', '송파구', '양천구', '영등포구', '용산구', '은평구'],
@@ -234,7 +243,12 @@
       unsubCustomers = onSnapshot(q, (snapshot) => {
         const newCustomers = [];
         snapshot.forEach(doc => {
-          newCustomers.push({ id: doc.id, ...doc.data() });
+          const d = { id: doc.id, ...doc.data() };
+          // 지사 미배정 + 지역 있으면 자동 배정
+          if (!d.assignedBranch && d.province) {
+            d.assignedBranch = getAutoAssignedBranch(d.province);
+          }
+          newCustomers.push(d);
         });
         // 최신순 정렬: createdAt 타임스탬프 > date 문자열 > no 순
         newCustomers.sort((a, b) => {
@@ -2487,7 +2501,8 @@
       const province = document.getElementById('crmProvince').value;
       const district = document.getElementById('crmDistrict').value;
       const address = document.getElementById('crmAddress').value.trim();
-      const assignedBranch = document.getElementById('crmAssignedBranch').value;
+      const manualBranch = document.getElementById('crmAssignedBranch').value;
+      const assignedBranch = manualBranch || getAutoAssignedBranch(province);
       const content = document.getElementById('crmContent').value.trim();
 
       if (!channel) { alert('문의채널을 선택하세요.'); return; }
@@ -2506,7 +2521,7 @@
           channel, consent, phone, email,
           product, custType, grade: grade2, grade2,
           province, district, address, assignedBranch, content,
-          status: (!assignedBranch && !grade2) ? '미배정' : '',
+          status: (!grade2) ? '미배정' : '',
           createdAt: serverTimestamp()
         });
         alert('고객 정보가 저장되었습니다.');

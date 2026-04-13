@@ -1075,13 +1075,22 @@
     async function rejectRegistration(reqId) {
       const req = (state._regRequests || []).find(r => r.id === reqId);
       if (!req) return;
-      if (!confirm(`"${req.companyName}" 등록 요청을 거절하시겠습니까?`)) return;
+      const reason = prompt(`"${req.companyName}" 등록 요청을 거절합니다.\n거절 사유를 입력하세요:`);
+      if (reason === null) return;
 
       try {
         const { db, doc, updateDoc } = window.OSKA_DB;
         const reqRef = doc(db, 'registration_requests', reqId);
-        await updateDoc(reqRef, { status: 'rejected', rejectedAt: new Date().toISOString() });
+        await updateDoc(reqRef, {
+          status: 'rejected',
+          rejectedAt: new Date().toISOString(),
+          rejectedBy: currentManager || '관리자',
+          rejectReason: reason || '사유 미입력'
+        });
         req.status = 'rejected';
+        req.rejectedAt = new Date().toISOString();
+        req.rejectedBy = currentManager || '관리자';
+        req.rejectReason = reason || '사유 미입력';
         showAdminMsg(`"${req.companyName}" 요청이 거절되었습니다.`, 'error');
         render();
       } catch(e) {
@@ -1154,23 +1163,40 @@
           <div>
             <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-3">처리 완료 (${processed.length}건)</p>
             <div class="space-y-2">
-              ${processed.map(r => `
-              <div class="bg-white border border-neutral-100 rounded-xl p-4 flex items-center justify-between">
-                <div class="flex items-center gap-3">
-                  <div class="w-8 h-8 rounded-lg flex items-center justify-center ${r.status === 'approved' ? 'bg-green-50' : 'bg-red-50'}">
-                    <i data-lucide="${r.status === 'approved' ? 'check' : 'x'}" class="w-4 h-4 ${r.status === 'approved' ? 'text-green-500' : 'text-red-500'}"></i>
+              ${processed.map(r => {
+                const processedDate = r.status === 'approved'
+                  ? (r.approvedAt ? new Date(r.approvedAt).toLocaleDateString('ko-KR') : '-')
+                  : (r.rejectedAt ? new Date(r.rejectedAt).toLocaleDateString('ko-KR') : '-');
+                const requestDate = r.createdAt ? new Date(r.createdAt.seconds ? r.createdAt.seconds * 1000 : r.createdAt).toLocaleDateString('ko-KR') : '-';
+                return `
+              <div class="bg-white border border-neutral-100 rounded-xl p-4">
+                <div class="flex items-center justify-between">
+                  <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center ${r.status === 'approved' ? 'bg-green-50' : 'bg-red-50'}">
+                      <i data-lucide="${r.status === 'approved' ? 'check' : 'x'}" class="w-4 h-4 ${r.status === 'approved' ? 'text-green-500' : 'text-red-500'}"></i>
+                    </div>
+                    <div>
+                      <span class="font-black text-sm">${r.companyName}</span>
+                      <span class="text-[8px] font-black ml-2 px-1.5 py-0.5 rounded ${r.status === 'approved' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}">${r.status === 'approved' ? '승인' : '거절'}</span>
+                    </div>
                   </div>
-                  <div>
-                    <span class="font-black text-sm">${r.companyName}</span>
-                    <span class="text-[8px] font-black ml-2 px-1.5 py-0.5 rounded ${r.status === 'approved' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}">${r.status === 'approved' ? '승인' : '거절'}</span>
+                  <div class="text-right">
+                    ${r.userId ? `<p class="text-[9px] text-neutral-400">ID: <span class="font-black text-neutral-600">${r.userId}</span></p>` : ''}
+                    <p class="text-[9px] text-neutral-300">${r.companyType === 'dealer' ? '대리점' : '지사'} · ${r.phone || ''}</p>
                   </div>
                 </div>
-                <div class="text-right">
-                  ${r.userId ? `<p class="text-[9px] text-neutral-400">ID: <span class="font-black text-neutral-600">${r.userId}</span></p>` : ''}
-                  <p class="text-[9px] text-neutral-300">${r.companyType === 'dealer' ? '대리점' : '지사'} · ${r.phone || ''}</p>
+                <div class="mt-3 grid grid-cols-3 gap-2 text-[9px] text-neutral-400">
+                  <div><span class="font-bold">대표자:</span> ${r.ownerName || '-'}</div>
+                  <div><span class="font-bold">담당자:</span> ${r.managerName || '-'}</div>
+                  <div><span class="font-bold">사업자번호:</span> ${r.bizNumber || '-'}</div>
+                  <div><span class="font-bold">신청일:</span> ${requestDate}</div>
+                  <div><span class="font-bold">처리일:</span> ${processedDate}</div>
+                  <div><span class="font-bold">처리자:</span> ${r.rejectedBy || r.approvedBy || '-'}</div>
                 </div>
-              </div>
-              `).join('')}
+                ${r.status === 'rejected' && r.rejectReason ? `<div class="mt-2 p-2 bg-red-50 rounded-lg text-[9px] text-red-600"><span class="font-black">거절 사유:</span> ${r.rejectReason}</div>` : ''}
+                ${r.address ? `<div class="mt-1 text-[9px] text-neutral-300"><span class="font-bold">주소:</span> ${r.address}</div>` : ''}
+              </div>`;
+              }).join('')}
             </div>
           </div>
           ` : ''}

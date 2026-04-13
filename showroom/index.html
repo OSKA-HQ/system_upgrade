@@ -526,7 +526,12 @@
             // 2. Firestore — crm_customers 컬렉션 저장 (SMR 연동)
             try {
                 const now = new Date();
+                // 최대 no 조회
+                const noSnap = await window.SHOWROOM_DB.collection('crm_customers').orderBy('no', 'desc').limit(1).get();
+                let newNo = 1;
+                if (!noSnap.empty) newNo = (noSnap.docs[0].data().no || 0) + 1;
                 await window.SHOWROOM_DB.collection('crm_customers').add({
+                    no: newNo,
                     brand: '오스카',
                     date: now.toISOString().slice(0, 10),
                     year: now.getFullYear() + '년',
@@ -542,11 +547,12 @@
                     province: '',
                     district: '',
                     address: '',
-                    assignedBranch: reservation.showroom,
+                    assignedBranch: '',
                     status: '미배정',
                     content: `[쇼룸예약] 쇼룸: ${reservation.showroom} / 날짜: ${reservation.date} / 시간: ${reservation.time} / 관심제품: ${reservation.products.join(', ')} / 요청: ${reservation.memo || '없음'}`,
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
+                console.log('[FB] 쇼룸예약 CRM 저장 성공, no:', newNo);
             } catch(e) {
                 console.error('CRM 저장 오류:', e);
             }
