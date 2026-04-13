@@ -3296,10 +3296,29 @@
       XLSX.writeFile(wb, fileName);
     }
 
-    // ===== 고객관리 (전화번호 기준 문의 이력) =====
-    function openCustomerHistory(phone) {
+    // ===== 고객관리 (전화번호 기준 문의 이력 — 아카이브 포함) =====
+    async function openCustomerHistory(phone) {
       if (!phone || phone === '-') { alert('전화번호 정보가 없는 고객입니다.'); return; }
-      const records = customers.filter(c => c.phone && c.phone.replace(/[^0-9]/g, '') === phone.replace(/[^0-9]/g, '')).sort((a, b) => {
+      const phoneNorm = phone.replace(/[^0-9]/g, '');
+
+      // 현재 CRM 데이터에서 검색
+      let records = customers.filter(c => c.phone && c.phone.replace(/[^0-9]/g, '') === phoneNorm);
+
+      // 아카이브 컬렉션에서도 검색
+      try {
+        const { db, collection, query, where, getDocs } = window.WORKS_DB;
+        if (db) {
+          const archiveSnap = await getDocs(collection(db, 'crm_customers_archive'));
+          archiveSnap.forEach(doc => {
+            const d = doc.data();
+            if (d.phone && d.phone.replace(/[^0-9]/g, '') === phoneNorm) {
+              records.push({ ...d, id: doc.id, _archived: true });
+            }
+          });
+        }
+      } catch (e) { console.log('아카이브 조회:', e); }
+
+      records.sort((a, b) => {
         const da = a.date || ''; const db2 = b.date || '';
         return db2.localeCompare(da);
       });
@@ -3396,7 +3415,7 @@
                     ${(r.product || '').split(',').map(p => p.trim()).filter(Boolean).map(p => `<span class="text-[8px] font-bold px-1.5 py-0.5 rounded bg-neutral-100 text-neutral-500">${p}</span>`).join('') || '<span class="text-[8px] text-neutral-300">제품 미지정</span>'}
                   </div>
                   <p class="mt-1.5 text-[10px] text-neutral-500 leading-relaxed line-clamp-2">${r.content || '-'}</p>
-                  <div class="mt-1 text-[9px] text-neutral-300">No. ${r.no || '-'} · ${r.custType || '-'} · ${[r.province, r.district].filter(Boolean).join(' ') || '-'}</div>
+                  <div class="mt-1 text-[9px] text-neutral-300">No. ${r.no || '-'} · ${r.custType || '-'} · ${[r.province, r.district].filter(Boolean).join(' ') || '-'}${r._archived ? ' · <span class="text-purple-400 font-bold">아카이브</span>' : ''}</div>
                 </div>
               </div>`;
               }).join('')}
