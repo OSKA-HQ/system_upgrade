@@ -75,12 +75,13 @@ function applyBranchFromURL() {
             }
             handleHandlerChange();
 
-            // 4. 지사 로그인이면 담당자 변경 불가 (잠금)
+            // 4. 로그인 계정 기반 담당자 잠금 (본사/지사/대리점 모두)
             const userType = allTypes[branch] || '';
-            if (userType === 'branch' || userType === 'dealer') {
+            if (userType === 'hq' || userType === 'branch' || userType === 'dealer') {
                 hSel.disabled = true;
                 hSel.style.opacity = '0.7';
                 hSel.style.cursor = 'not-allowed';
+                hSel.title = '담당자는 로그인 계정 정보로 자동 설정됩니다';
                 // 지사 선택도 잠금
                 if (sel) {
                     sel.disabled = true;
@@ -794,6 +795,7 @@ async function saveAsPDF() {
         document.body.appendChild(link); link.click();
         setTimeout(() => { document.body.removeChild(link); URL.revokeObjectURL(blobURL); }, 100);
         sendEmailJS();
+        saveQuotationToCRM();
     } catch (e) { console.error('PDF Engine Error:', e); alert('PDF 생성 오류 발생'); } finally { overlay.classList.add('hidden'); document.getElementById('pdf-hidden-container').innerHTML = ''; }
 }
 
@@ -804,6 +806,80 @@ function sendEmailJS() {
     const rFull = `${document.getElementById('region-do').value} ${document.getElementById('region-si').value} ${document.getElementById('cust-addr-detail').value}`;
     let fullText = `[OSKA 견적발송]\n담당: ${(bVal === '직접입력' ? bInp : bVal)} / ${(hVal === '직접 입력' ? hInp : hVal)}\n고객: ${cName} (${cPhone})\n주소: ${rFull}\n금액: ₩${document.getElementById('val-total').textContent}`;
     emailjs.send("service_a3gvyib", "template_nz7rtfr", { cust_name: cName, cust_phone: cPhone, address: rFull, total_price: "₩" + document.getElementById('val-total').textContent, message: fullText });
+}
+
+// ========== 견적 CRM 연동 ==========
+async function saveQuotationToCRM() {
+    if (!window.QUOTE_DB) { console.warn('[CRM] Firebase not initialized'); return; }
+    try {
+        const bVal = document.getElementById('branch-select').value, bInp = document.getElementById('branch-input').value;
+        const hVal = document.getElementById('handler-select').value, hInp = document.getElementById('handler-input').value;
+        const branch = bVal === '직접입력' ? bInp : bVal;
+        const handler = hVal === '직접 입력' ? hInp : hVal;
+        const cName = document.getElementById('cust-name').value || '';
+        const cPhone = document.getElementById('cust-phone').value || '';
+        const province = document.getElementById('region-do').value || '';
+        const district = document.getElementById('region-si').value || '';
+        const addrDetail = document.getElementById('cust-addr-detail').value || '';
+        const totalPrice = document.getElementById('val-total').textContent || '0';
+
+        // 견적 품목 수집
+        const products = [];
+        document.querySelectorAll('#est-tbody tr').forEach(tr => {
+            const prod = tr.querySelector('td:nth-child(2) select')?.value || '';
+            const sum = tr.querySelector('.sum')?.textContent || '0';
+            if (prod && prod !== '제품 선택') products.push({ product: prod, amount: sum });
+        });
+
+        // 1. quotation_records 컬렉션에 견적 메타데이터 저장
+        await window.QUOTE_DB.collection('quotation_records').add({
+            branch: branch,
+            handler: handler,
+            customerName: cName,
+            customerPhone: cPhone,
+            province: province,
+            district: district,
+            address: addrDetail,
+            totalPrice: totalPrice,
+            products: products,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        console.log('[CRM] 견적 기록 저장 완료');
+
+        // 2. crm_customers 컬렉션에 CRM 기록 추가
+        if (cPhone) {
+            const noSnap = await window.QUOTE_DB.collection('crm_customers').orderBy('no', 'desc').limit(1).get();
+            let newNo = 1;
+            if (!noSnap.empty) newNo = (noSnap.docs[0].data().no || 0) + 1;
+
+            const now = new Date();
+            await window.QUOTE_DB.collection('crm_customers').add({
+                no: newNo,
+                brand: '오스카',
+                date: now.toISOString().slice(0, 10),
+                year: now.getFullYear() + '년',
+                month: (now.getMonth() + 1) + '월',
+                channel: '스마트견적',
+                consent: '동의',
+                phone: cPhone,
+                email: '',
+                product: products.map(p => p.product).join(','),
+                custType: '개인',
+                grade: '',
+                grade2: '',
+                province: province,
+                district: district,
+                address: addrDetail,
+                assignedBranch: branch,
+                status: branch ? '' : '미배정',
+                content: `[견적] 담당: ${handler} / 금액: ₩${totalPrice} / 품목: ${products.map(p => p.product).join(', ')}`,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp()
+            });
+            console.log('[CRM] 견적 CRM 기록 추가 완료, no:', newNo);
+        }
+    } catch (e) {
+        console.error('[CRM] 견적 저장 오류:', e);
+    }
 }
 
 const MANAGER_PW = ['oska', '1234', 'admin'];

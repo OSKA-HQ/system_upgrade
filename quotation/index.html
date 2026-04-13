@@ -24,6 +24,24 @@
         })();
     </script>
 
+    <!-- Firebase SDK (Firestore CRM 연동 - compat) -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+    <script>
+      const __fbApp = firebase.initializeApp({
+        apiKey: "AIzaSyDs8IJANSBncJHcFFrF03pLM7JvEOppcY0",
+        authDomain: "oska-integrated-management.firebaseapp.com",
+        projectId: "oska-integrated-management",
+        storageBucket: "oska-integrated-management.firebasestorage.app",
+        messagingSenderId: "778732114280",
+        appId: "1:778732114280:web:96e00aff42bdbff3bf06dd"
+      });
+      firebase.auth().signInAnonymously()
+        .catch(function(err) { console.error('Firebase Auth Error:', err); });
+      window.QUOTE_DB = firebase.firestore();
+    </script>
+
     <script>
         tailwind.config = {
             theme: {

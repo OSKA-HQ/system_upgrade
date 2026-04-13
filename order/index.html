@@ -127,6 +127,8 @@
     let crmRepeatFilter = '전체';   // '전체','2회 이상','3회 이상'
     let crmAssignFilter = '전체';   // '전체','미배정'
     let crmSearch = '';
+    let crmSortField = 'date';    // 정렬 기준: 'no','date','brand','channel','grade2'
+    let crmSortDir = 'desc';      // 정렬 방향: 'asc','desc'
     let crmPage = 0;
     const CRM_PAGE_SIZE = 50;
     let dashYear = '전체';       // '전체' or '2025년' etc.
@@ -2301,18 +2303,24 @@
                 <table class="w-full text-[11px]">
                   <thead>
                     <tr class="bg-neutral-50 border-b border-neutral-200">
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest w-10">No</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">구분</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">날짜</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">채널</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">전화번호</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">제품</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">유형</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">등급</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest hidden md:table-cell">상담내용</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest hidden md:table-cell">지역</th>
-                      <th class="px-3 py-3 text-left font-black text-[9px] text-neutral-400 uppercase tracking-widest">지사배정</th>
-                      <th class="px-3 py-3 text-center font-black text-[9px] text-neutral-400 uppercase tracking-widest w-24">관리</th>
+                      ${[
+                        {key:'no', label:'No', cls:'w-10'},
+                        {key:'brand', label:'구분', cls:''},
+                        {key:'date', label:'날짜', cls:''},
+                        {key:'channel', label:'채널', cls:''},
+                        {key:'phone', label:'전화번호', cls:''},
+                        {key:'product', label:'제품', cls:''},
+                        {key:'custType', label:'유형', cls:''},
+                        {key:'grade2', label:'등급', cls:''},
+                        {key:'content', label:'상담내용', cls:'hidden md:table-cell'},
+                        {key:'province', label:'지역', cls:'hidden md:table-cell'},
+                        {key:'assignedBranch', label:'지사배정', cls:''}
+                      ].map(h => {
+                        const isActive = crmSortField === h.key;
+                        const arrow = isActive ? (crmSortDir === 'asc' ? ' ▲' : ' ▼') : '';
+                        return `<th class="px-3 py-3 text-left font-black text-[9px] uppercase tracking-widest ${h.cls} ${isActive ? 'text-black' : 'text-neutral-400'} cursor-pointer hover:text-black select-none" onclick="setCRMSort('${h.key}')">${h.label}${arrow}</th>`;
+                      }).join('')}
+                      <th class="px-3 py-3 text-center font-black text-[9px] text-neutral-400 uppercase tracking-widest w-32">관리</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -2322,8 +2330,7 @@
                       const gradeClass = CRM_GRADE_COLORS[displayGrade] || 'bg-neutral-50 text-neutral-400 border-neutral-200';
                       const phoneNorm = c.phone ? c.phone.replace(/[^0-9]/g, '') : '';
                       const pCount = phoneNorm ? (phoneCountMap[phoneNorm] || 1) : 1;
-                      const histIconColor = pCount >= 3 ? 'text-neutral-800' : pCount >= 2 ? 'text-neutral-500' : 'text-neutral-300';
-                      const histBadge = pCount >= 2 ? `<span class="absolute -top-1.5 -right-1.5 w-3.5 h-3.5 rounded-full text-[7px] font-black flex items-center justify-center ${pCount >= 3 ? 'bg-black text-white' : 'bg-neutral-400 text-white'}">${pCount}</span>` : '';
+                      // pCount: 동일 전화번호 문의 횟수 (중복 문의 뱃지에 사용)
                       return `
                     <tr class="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">
                       <td class="px-3 py-3 text-neutral-400 font-bold">${c.no || '-'}</td>
@@ -2339,12 +2346,12 @@
                       <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${c.status === '미배정' ? 'bg-red-50 text-red-500 border border-red-200' : c.assignedBranch ? 'bg-green-50 text-green-600' : 'text-neutral-400'}">${c.status === '미배정' ? '미배정' : c.assignedBranch || '-'}</span></td>
                       <td class="px-3 py-3 text-center">
                         <div class="flex items-center justify-center gap-1.5">
-                          <button onclick="openCustomerHistory('${c.phone || ''}')" class="relative ${histIconColor} hover:text-blue-500 transition-colors" title="고객관리 (${pCount}회 문의)">
-                            <i data-lucide="user-search" class="w-3.5 h-3.5"></i>
-                            ${histBadge}
+                          <button onclick="openCustomerHistory('${c.phone || ''}')" class="relative px-2 py-1 rounded-lg border text-[9px] font-black transition-all ${pCount >= 2 ? 'border-black bg-black text-white hover:bg-neutral-800' : 'border-neutral-200 text-neutral-400 hover:border-black hover:text-black'}" title="고객관리 (${pCount}회 문의)">
+                            고객관리
+                            ${pCount >= 2 ? `<span class="ml-0.5 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[7px] font-black ${pCount >= 3 ? 'bg-red-500 text-white' : 'bg-white text-black'}">${pCount}</span>` : ''}
                           </button>
-                          <button onclick="openEditPanel('${c.id}')" class="text-neutral-300 hover:text-black transition-colors" title="정보 수정">
-                            <i data-lucide="pencil" class="w-3 h-3"></i>
+                          <button onclick="openEditPanel('${c.id}')" class="px-2 py-1 rounded-lg border border-neutral-200 text-[9px] font-black text-neutral-400 hover:border-black hover:text-black transition-all">
+                            정보수정
                           </button>
                         </div>
                       </td>
@@ -2417,7 +2424,36 @@
             (c.email || '').toLowerCase().includes(q);
         });
       }
+      // 정렬 적용
+      list.sort((a, b) => {
+        let va = a[crmSortField] || '';
+        let vb = b[crmSortField] || '';
+        if (crmSortField === 'no') {
+          va = Number(va) || 0;
+          vb = Number(vb) || 0;
+        } else if (crmSortField === 'date') {
+          va = String(va).replace(/[^0-9-]/g, '');
+          vb = String(vb).replace(/[^0-9-]/g, '');
+        } else {
+          va = String(va).toLowerCase();
+          vb = String(vb).toLowerCase();
+        }
+        if (va < vb) return crmSortDir === 'asc' ? -1 : 1;
+        if (va > vb) return crmSortDir === 'asc' ? 1 : -1;
+        return 0;
+      });
       return list;
+    }
+
+    function setCRMSort(field) {
+      if (crmSortField === field) {
+        crmSortDir = crmSortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        crmSortField = field;
+        crmSortDir = field === 'date' || field === 'no' ? 'desc' : 'asc';
+      }
+      crmPage = 0;
+      render();
     }
 
     function setCRMFilter(g) {
