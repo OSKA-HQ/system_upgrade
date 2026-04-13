@@ -122,45 +122,27 @@
                 <h2 class="text-xl font-black leading-tight">방문하실 쇼룸을<br>선택해 주세요.</h2>
             </div>
             <div class="space-y-3" id="showroom-list">
-                <div class="showroom-card rounded-2xl p-5 flex items-center gap-4" onclick="selectShowroom(this, '서울 쇼룸')" data-showroom="서울 쇼룸">
-                    <div class="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i data-lucide="building-2" class="w-5 h-5 text-neutral-400 card-icon"></i>
+                <!-- JS에서 동적 생성 -->
+            </div>
+            <!-- 선택된 쇼룸 상세정보 -->
+            <div id="showroom-detail" class="mt-4 bg-neutral-50 rounded-2xl p-5 hidden fade-in">
+                <div class="space-y-2.5">
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="map-pin" class="w-3.5 h-3.5 text-neutral-400 mt-0.5 flex-shrink-0"></i>
+                        <p class="text-[11px] text-neutral-600" id="detail-address">-</p>
                     </div>
-                    <div class="flex-1">
-                        <p class="font-bold text-sm">서울 쇼룸</p>
-                        <p class="text-[10px] text-neutral-400 card-subtitle mt-0.5">서울특별시 (샘플)</p>
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="clock" class="w-3.5 h-3.5 text-neutral-400 mt-0.5 flex-shrink-0"></i>
+                        <p class="text-[11px] text-neutral-600" id="detail-hours">-</p>
                     </div>
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-neutral-300 card-icon"></i>
-                </div>
-                <div class="showroom-card rounded-2xl p-5 flex items-center gap-4" onclick="selectShowroom(this, '경기 쇼룸')" data-showroom="경기 쇼룸">
-                    <div class="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i data-lucide="building-2" class="w-5 h-5 text-neutral-400 card-icon"></i>
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="phone" class="w-3.5 h-3.5 text-neutral-400 mt-0.5 flex-shrink-0"></i>
+                        <p class="text-[11px] text-neutral-600" id="detail-phone">-</p>
                     </div>
-                    <div class="flex-1">
-                        <p class="font-bold text-sm">경기 쇼룸</p>
-                        <p class="text-[10px] text-neutral-400 card-subtitle mt-0.5">경기도 (샘플)</p>
+                    <div class="flex items-start gap-2">
+                        <i data-lucide="layers" class="w-3.5 h-3.5 text-neutral-400 mt-0.5 flex-shrink-0"></i>
+                        <p class="text-[11px] text-neutral-600" id="detail-lineup">-</p>
                     </div>
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-neutral-300 card-icon"></i>
-                </div>
-                <div class="showroom-card rounded-2xl p-5 flex items-center gap-4" onclick="selectShowroom(this, '부산 쇼룸')" data-showroom="부산 쇼룸">
-                    <div class="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i data-lucide="building-2" class="w-5 h-5 text-neutral-400 card-icon"></i>
-                    </div>
-                    <div class="flex-1">
-                        <p class="font-bold text-sm">부산 쇼룸</p>
-                        <p class="text-[10px] text-neutral-400 card-subtitle mt-0.5">부산광역시 (샘플)</p>
-                    </div>
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-neutral-300 card-icon"></i>
-                </div>
-                <div class="showroom-card rounded-2xl p-5 flex items-center gap-4" onclick="selectShowroom(this, '대구 쇼룸')" data-showroom="대구 쇼룸">
-                    <div class="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                        <i data-lucide="building-2" class="w-5 h-5 text-neutral-400 card-icon"></i>
-                    </div>
-                    <div class="flex-1">
-                        <p class="font-bold text-sm">대구 쇼룸</p>
-                        <p class="text-[10px] text-neutral-400 card-subtitle mt-0.5">대구광역시 (샘플)</p>
-                    </div>
-                    <i data-lucide="chevron-right" class="w-4 h-4 text-neutral-300 card-icon"></i>
                 </div>
             </div>
         </section>
@@ -213,11 +195,7 @@
                 <div>
                     <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1.5">관심 제품 (복수 선택 가능)</label>
                     <div class="flex flex-wrap gap-2 mt-1" id="product-chips">
-                        <div class="product-chip rounded-full px-4 py-2 text-xs font-medium" onclick="toggleProduct(this, '파고라')">파고라</div>
-                        <div class="product-chip rounded-full px-4 py-2 text-xs font-medium" onclick="toggleProduct(this, '어닝')">어닝</div>
-                        <div class="product-chip rounded-full px-4 py-2 text-xs font-medium" onclick="toggleProduct(this, '가든룸')">가든룸</div>
-                        <div class="product-chip rounded-full px-4 py-2 text-xs font-medium" onclick="toggleProduct(this, '데크')">데크</div>
-                        <div class="product-chip rounded-full px-4 py-2 text-xs font-medium" onclick="toggleProduct(this, '기타')">기타</div>
+                        <!-- JS에서 선택된 쇼룸 라인업 기반으로 동적 생성 -->
                     </div>
                 </div>
                 <div>
@@ -280,7 +258,7 @@
             <div class="mt-6 text-center">
                 <p class="text-[10px] text-neutral-400 leading-relaxed">
                     입력하신 연락처로 예약 확정 안내가 발송됩니다.<br>
-                    문의사항은 <span class="font-bold text-black">1533-6887</span>로 연락 주세요.
+                    문의사항은 <span class="font-bold text-black">1800-5945</span>로 연락 주세요.
                 </p>
             </div>
         </section>
@@ -299,6 +277,47 @@
     </footer>
 
     <script>
+        // ========== 쇼룸 데이터 ==========
+        const SHOWROOMS = {
+            '서울 프라이빗 쇼룸': {
+                subtitle: '서울 강남구 학동역 부근',
+                address: '서울 강남구 학동역 부근 (프라이빗 쇼룸으로 예약 후 주소 확인이 가능합니다.)',
+                hours: '사전 조율',
+                hoursNote: '프라이빗 쇼룸으로 사전 예약 후 방문 가능합니다.',
+                phone: '1800-5945',
+                lineup: ['오페라 엑스트라'],
+                icon: 'lock',
+                isPrivate: true
+            },
+            '평택 본사 쇼룸': {
+                subtitle: '경기 평택시 · 본사 쇼룸',
+                address: '경기 평택 고덕면 도시지원1길 116, G1 지식산업센터 지산 107-111호',
+                hours: '평일 10:00 ~ 17:00',
+                phone: '1800-5945',
+                lineup: ['스테이', '돈앤돈', '아테나', '오페라', '클라비아', '스톤 데크', '클리어 라인'],
+                icon: 'building-2',
+                isPrivate: false
+            },
+            '세종 전시장': {
+                subtitle: '세종특별자치시 연기면',
+                address: '세종 세종 연기면 보통리 392-1',
+                hours: '월요일~토요일 09:00 ~ 22:00',
+                phone: '1800-5945',
+                lineup: ['오스카 스페셜 에디션'],
+                icon: 'map-pin',
+                isPrivate: false
+            },
+            '부산 전시장': {
+                subtitle: '부산 기장군',
+                address: '부산 기장군 기장읍 차성로436번길 6-1',
+                hours: '평일 10:00 ~ 17:00',
+                phone: '1800-5945',
+                lineup: ['스테이', '에어리어', '오페라'],
+                icon: 'map-pin',
+                isPrivate: false
+            }
+        };
+
         // ========== 상태 ==========
         let currentStep = 1;
         const totalSteps = 5;
@@ -313,11 +332,46 @@
             memo: ''
         };
 
+        // ========== 쇼룸 목록 렌더링 ==========
+        function renderShowroomList() {
+            const container = document.getElementById('showroom-list');
+            container.innerHTML = '';
+            Object.keys(SHOWROOMS).forEach(name => {
+                const info = SHOWROOMS[name];
+                const div = document.createElement('div');
+                div.className = 'showroom-card rounded-2xl p-5 flex items-center gap-4';
+                div.setAttribute('data-showroom', name);
+                div.onclick = function() { selectShowroom(this, name); };
+                div.innerHTML = `
+                    <div class="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="${info.icon}" class="w-5 h-5 text-neutral-400 card-icon"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="font-bold text-sm">${name}</p>
+                        <p class="text-[10px] text-neutral-400 card-subtitle mt-0.5">${info.subtitle}</p>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-neutral-300 card-icon"></i>
+                `;
+                container.appendChild(div);
+            });
+            lucide.createIcons();
+        }
+
         // ========== 쇼룸 선택 (Step 1) ==========
         function selectShowroom(el, name) {
             document.querySelectorAll('.showroom-card').forEach(c => c.classList.remove('selected'));
             el.classList.add('selected');
             reservation.showroom = name;
+
+            // 상세정보 표시
+            const info = SHOWROOMS[name];
+            const detail = document.getElementById('showroom-detail');
+            document.getElementById('detail-address').textContent = info.address;
+            document.getElementById('detail-hours').textContent = info.hours + (info.hoursNote ? ' — ' + info.hoursNote : '');
+            document.getElementById('detail-phone').textContent = info.phone;
+            document.getElementById('detail-lineup').textContent = '전시 라인업: ' + info.lineup.join(', ');
+            detail.classList.remove('hidden');
+
             lucide.createIcons();
             enableNext(true);
         }
@@ -341,9 +395,18 @@
             if (val) {
                 const d = new Date(val);
                 const day = d.getDay();
-                // 일요일(0) 체크
+                const info = SHOWROOMS[reservation.showroom];
+
+                // 일요일 체크 (모든 쇼룸)
                 if (day === 0) {
                     alert('일요일은 예약이 불가합니다. 다른 날짜를 선택해 주세요.');
+                    document.getElementById('visit-date').value = '';
+                    enableNext(false);
+                    return;
+                }
+                // 토요일 체크 (평택, 부산은 평일만)
+                if (day === 6 && !info.isPrivate && reservation.showroom !== '세종 전시장') {
+                    alert('해당 쇼룸은 평일만 운영됩니다. 월~금 날짜를 선택해 주세요.');
                     document.getElementById('visit-date').value = '';
                     enableNext(false);
                     return;
@@ -374,9 +437,23 @@
 
             const d = new Date(reservation.date);
             const isSaturday = d.getDay() === 6;
-            const slots = isSaturday
-                ? ['10:00', '11:00', '12:00', '13:00', '14:00']
-                : ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+            const info = SHOWROOMS[reservation.showroom];
+
+            let slots;
+            if (info && info.isPrivate) {
+                // 프라이빗 쇼룸: 사전 조율이므로 넓은 시간대 제공
+                slots = ['10:00', '11:00', '13:00', '14:00', '15:00', '16:00'];
+            } else if (reservation.showroom === '세종 전시장') {
+                // 세종: 월~토 09~22
+                slots = isSaturday
+                    ? ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00']
+                    : ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00', '20:00', '21:00'];
+            } else {
+                // 평택, 부산: 평일 10~17
+                slots = isSaturday
+                    ? ['10:00', '11:00', '12:00', '13:00', '14:00']
+                    : ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00'];
+            }
 
             slots.forEach(time => {
                 const div = document.createElement('div');
@@ -395,6 +472,21 @@
         }
 
         // ========== 제품 선택 (Step 4) ==========
+        function renderProductChips() {
+            const container = document.getElementById('product-chips');
+            container.innerHTML = '';
+            reservation.products = [];
+            const info = SHOWROOMS[reservation.showroom];
+            const products = info ? [...info.lineup, '기타'] : ['파고라', '어닝', '가든룸', '데크', '기타'];
+            products.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'product-chip rounded-full px-4 py-2 text-xs font-medium';
+                div.textContent = p;
+                div.onclick = function() { toggleProduct(this, p); };
+                container.appendChild(div);
+            });
+        }
+
         function toggleProduct(el, product) {
             el.classList.toggle('selected');
             const idx = reservation.products.indexOf(product);
@@ -461,6 +553,7 @@
             // 스텝 진입 시 초기화
             if (step === 2) initDatePicker();
             if (step === 3) generateTimeSlots();
+            if (step === 4) renderProductChips();
 
             // 스크롤 최상단
             window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -570,6 +663,7 @@
 
         // ========== 초기화 ==========
         document.addEventListener('DOMContentLoaded', function() {
+            renderShowroomList();
             lucide.createIcons();
         });
     </script>
