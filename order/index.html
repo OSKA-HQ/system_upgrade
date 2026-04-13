@@ -4231,6 +4231,33 @@
       const tabActive = 'border-b-2 border-black text-black';
       const tabInactive = 'border-b-2 border-transparent text-neutral-400 hover:text-neutral-600';
 
+      // leaveRequests 리스트 HTML을 미리 생성 (중첩 템플릿 리터럴 회피)
+      const leaveListHTML = leaveRequests.length > 0 ? leaveRequests.map(req => {
+        const sc = statusColor[req.status] || statusColor['대기'];
+        const approveButtons = req.status === '대기' ? `
+          <div class="flex gap-2">
+            <button onclick="approveLeave('${req.id}')" class="bg-green-100 text-green-700 rounded px-3 py-1 text-[9px] font-black hover:bg-green-200 transition-colors">승인</button>
+            <button onclick="rejectLeave('${req.id}')" class="bg-red-100 text-red-700 rounded px-3 py-1 text-[9px] font-black hover:bg-red-200 transition-colors">반려</button>
+          </div>` : '';
+        const approvedByHTML = req.approvedBy ? `<div><span class="font-black">결재:</span> ${req.approvedBy}</div>` : '';
+        return `
+          <div class="bg-white border border-neutral-200 rounded-xl p-4">
+            <div class="flex items-start justify-between mb-3">
+              <div>
+                <h4 class="font-black text-sm mb-1">${req.applicant}</h4>
+                <span class="text-[9px] px-2 py-1 rounded border ${sc}">${req.status}</span>
+              </div>
+              ${approveButtons}
+            </div>
+            <div class="grid grid-cols-2 gap-3 text-[10px] text-neutral-600">
+              <div><span class="font-black">유형:</span> ${req.type}</div>
+              <div><span class="font-black">기간:</span> ${formatDate(req.startDate)} ~ ${formatDate(req.endDate)}</div>
+              <div><span class="font-black">사유:</span> ${req.reason}</div>
+              ${approvedByHTML}
+            </div>
+          </div>`;
+      }).join('') : '<p class="text-[10px] text-neutral-300 py-4">신청 내역이 없습니다.</p>';
+
       const leaveContent = `
         <!-- 통계 -->
         <div class="grid grid-cols-3 gap-4 mb-6">
@@ -4253,28 +4280,7 @@
         </div>
 
         <div class="space-y-3">
-          ${leaveRequests.length > 0 ? leaveRequests.map(req => \`
-            <div class="bg-white border border-neutral-200 rounded-xl p-4">
-              <div class="flex items-start justify-between mb-3">
-                <div>
-                  <h4 class="font-black text-sm mb-1">\${req.applicant}</h4>
-                  <span class="text-[9px] px-2 py-1 rounded border \${statusColor[req.status] || statusColor['대기']}">\${req.status}</span>
-                </div>
-                \${req.status === '대기' ? \`
-                  <div class="flex gap-2">
-                    <button onclick="approveLeave('\${req.id}')" class="bg-green-100 text-green-700 rounded px-3 py-1 text-[9px] font-black hover:bg-green-200 transition-colors">승인</button>
-                    <button onclick="rejectLeave('\${req.id}')" class="bg-red-100 text-red-700 rounded px-3 py-1 text-[9px] font-black hover:bg-red-200 transition-colors">반려</button>
-                  </div>
-                \` : ''}
-              </div>
-              <div class="grid grid-cols-2 gap-3 text-[10px] text-neutral-600">
-                <div><span class="font-black">유형:</span> \${req.type}</div>
-                <div><span class="font-black">기간:</span> \${formatDate(req.startDate)} ~ \${formatDate(req.endDate)}</div>
-                <div><span class="font-black">사유:</span> \${req.reason}</div>
-                \${req.approvedBy ? \`<div><span class="font-black">결재:</span> \${req.approvedBy}</div>\` : ''}
-              </div>
-            </div>
-          \`).join('') : '<p class="text-[10px] text-neutral-300 py-4">신청 내역이 없습니다.</p>'}
+          ${leaveListHTML}
         </div>
       `;
 
