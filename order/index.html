@@ -133,6 +133,22 @@
     let dashMonth = '전체';      // '전체' or '3월' etc.
     let dashBrand = '전체';      // '전체','오스카','테라까사'
 
+    // Schedule 상태
+    let schedules = [];
+    let unsubSchedules = null;
+    let scheduleMonth = new Date();
+    let scheduleModalOpen = false;
+
+    // Leave Request 상태
+    let leaveRequests = [];
+    let unsubLeaveRequests = null;
+    let leaveModalOpen = false;
+
+    // Showroom Reservation 상태
+    let showroomReservations = [];
+    let unsubShowroomReservations = null;
+    let showroomFilter = '전체';
+
     // 지역 데이터 (시/도, 시/군/구)
     const REGIONS_DATA = {
       '서울': ['강남구', '강동구', '강북구', '강서구', '관악구', '광진구', '구로구', '금천구', '노원구', '도봉구', '동대문구', '동작구', '마포구', '서대문구', '서초구', '성동구', '성북구', '송파구', '양천구', '영등포구', '용산구', '은평구'],
@@ -277,6 +293,44 @@
       });
     }
 
+    function subscribeSchedules() {
+      const { db, collection, onSnapshot } = window.WORKS_DB;
+      const schedulesRef = collection(db, 'works_schedules');
+      unsubSchedules = onSnapshot(schedulesRef, (snapshot) => {
+        schedules = [];
+        snapshot.forEach(doc => {
+          schedules.push({ id: doc.id, ...doc.data() });
+        });
+        if (currentView === 'schedule') throttledRender();
+      });
+    }
+
+    function subscribeLeaveRequests() {
+      const { db, collection, query, orderBy, onSnapshot } = window.WORKS_DB;
+      const leaveRef = collection(db, 'works_leave_requests');
+      const q = query(leaveRef, orderBy('createdAt', 'desc'));
+      unsubLeaveRequests = onSnapshot(q, (snapshot) => {
+        leaveRequests = [];
+        snapshot.forEach(doc => {
+          leaveRequests.push({ id: doc.id, ...doc.data() });
+        });
+        if (currentView === 'leave') throttledRender();
+      });
+    }
+
+    function subscribeShowroomReservations() {
+      const { db, collection, query, orderBy, onSnapshot } = window.WORKS_DB;
+      const showroomRef = collection(db, 'showroom_reservations');
+      const q = query(showroomRef, orderBy('date', 'desc'));
+      unsubShowroomReservations = onSnapshot(q, (snapshot) => {
+        showroomReservations = [];
+        snapshot.forEach(doc => {
+          showroomReservations.push({ id: doc.id, ...doc.data() });
+        });
+        if (currentView === 'showroom_mgmt') throttledRender();
+      });
+    }
+
     // ===== 렌더링 =====
     let _searchDebounce = null;
     let _restoreFocus = null;
@@ -305,6 +359,9 @@
       else if (currentView === 'notice') html = renderNotice();
       else if (currentView === 'crm') html = renderCRM();
       else if (currentView === 'dashboard') html = renderDashboardPage();
+      else if (currentView === 'schedule') html = renderSchedule();
+      else if (currentView === 'leave') html = renderLeave();
+      else if (currentView === 'showroom_mgmt') html = renderShowroomMgmt();
       else html = renderHome();
 
       requestAnimationFrame(() => {
@@ -434,6 +491,45 @@
                 <p class="text-[11px] text-neutral-400 mb-4">AS 견적내기</p>
                 <div class="border-t border-orange-50 pt-4">
                   <p class="text-[10px] text-orange-400">새 탭에서 열기 →</p>
+                </div>
+              </div>
+
+              <!-- 주요일정 다이어리 -->
+              <div class="bg-white border border-purple-200 rounded-2xl p-6 hover:border-purple-400 transition-all cursor-pointer group" onclick="navigate('schedule')">
+                <div class="flex items-center justify-between mb-4">
+                  <i data-lucide="calendar" class="w-6 h-6 text-purple-300 group-hover:text-purple-500 transition-colors"></i>
+                  <span class="text-[9px] bg-purple-50 text-purple-400 px-2 py-1 rounded font-black tracking-widest">일정</span>
+                </div>
+                <h3 class="text-lg font-black uppercase tracking-wider mb-2">Schedule</h3>
+                <p class="text-[11px] text-neutral-400 mb-4">주요일정 다이어리</p>
+                <div class="border-t border-purple-50 pt-4">
+                  <p class="text-[10px] text-purple-400">${schedules.length}개 일정</p>
+                </div>
+              </div>
+
+              <!-- 연차신청서 전자결재 -->
+              <div class="bg-white border border-blue-200 rounded-2xl p-6 hover:border-blue-400 transition-all cursor-pointer group" onclick="navigate('leave')">
+                <div class="flex items-center justify-between mb-4">
+                  <i data-lucide="file-text" class="w-6 h-6 text-blue-300 group-hover:text-blue-500 transition-colors"></i>
+                  <span class="text-[9px] bg-blue-50 text-blue-400 px-2 py-1 rounded font-black tracking-widest">결재</span>
+                </div>
+                <h3 class="text-lg font-black uppercase tracking-wider mb-2">Leave Request</h3>
+                <p class="text-[11px] text-neutral-400 mb-4">연차신청서 전자결재</p>
+                <div class="border-t border-blue-50 pt-4">
+                  <p class="text-[10px] text-blue-400">${leaveRequests.filter(r => r.status === '대기').length}건 대기</p>
+                </div>
+              </div>
+
+              <!-- 쇼룸예약 관리 -->
+              <div class="bg-white border border-green-200 rounded-2xl p-6 hover:border-green-400 transition-all cursor-pointer group" onclick="navigate('showroom_mgmt')">
+                <div class="flex items-center justify-between mb-4">
+                  <i data-lucide="store" class="w-6 h-6 text-green-300 group-hover:text-green-500 transition-colors"></i>
+                  <span class="text-[9px] bg-green-50 text-green-400 px-2 py-1 rounded font-black tracking-widest">예약</span>
+                </div>
+                <h3 class="text-lg font-black uppercase tracking-wider mb-2">Showroom</h3>
+                <p class="text-[11px] text-neutral-400 mb-4">쇼룸예약 관리 패널</p>
+                <div class="border-t border-green-50 pt-4">
+                  <p class="text-[10px] text-green-400">${showroomReservations.length}건 예약</p>
                 </div>
               </div>
             </div>
@@ -3270,6 +3366,503 @@
       } catch(e) { console.error('Notice delete error:', e); alert('삭제 실패'); }
     }
 
+    // ===== Schedule (주요일정 다이어리) =====
+    function renderSchedule() {
+      const year = scheduleMonth.getFullYear();
+      const month = scheduleMonth.getMonth();
+      const firstDay = new Date(year, month, 1).getDay();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+      const monthSchedules = schedules.filter(s => {
+        const start = new Date(s.startDate);
+        return start.getFullYear() === year && start.getMonth() === month;
+      });
+
+      const dayArray = [];
+      for (let i = 0; i < firstDay; i++) dayArray.push(null);
+      for (let i = 1; i <= daysInMonth; i++) dayArray.push(i);
+
+      const typeColors = {
+        '박람회': 'bg-red-100 text-red-700 border-red-300',
+        '연차': 'bg-blue-100 text-blue-700 border-blue-300',
+        '쇼룸방문': 'bg-green-100 text-green-700 border-green-300',
+        '기타': 'bg-gray-100 text-gray-700 border-gray-300'
+      };
+
+      return `
+        <div class="min-h-screen bg-white animate-fade-in">
+          ${renderNav()}
+          <main class="pt-20 pb-20 max-w-4xl mx-auto px-6">
+            <div class="flex items-center justify-between mb-6">
+              <h1 class="text-3xl font-black tracking-tighter">주요일정 다이어리</h1>
+              <button onclick="navigate('home')" class="text-neutral-400 hover:text-black transition-colors">
+                <i data-lucide="x" class="w-6 h-6"></i>
+              </button>
+            </div>
+
+            <!-- 월 네비게이션 -->
+            <div class="flex items-center justify-between mb-6 bg-white border border-neutral-200 rounded-xl p-4">
+              <button onclick="schedulePrevMonth()" class="p-2 hover:bg-neutral-100 rounded-lg transition-colors">
+                <i data-lucide="chevron-left" class="w-5 h-5"></i>
+              </button>
+              <h2 class="text-lg font-black text-center flex-1">${year}년 ${month + 1}월</h2>
+              <button onclick="scheduleNextMonth()" class="p-2 hover:bg-neutral-100 rounded-lg transition-colors">
+                <i data-lucide="chevron-right" class="w-5 h-5"></i>
+              </button>
+            </div>
+
+            <!-- 캘린더 그리드 -->
+            <div class="bg-white border border-neutral-200 rounded-xl p-4 mb-6">
+              <div class="grid grid-cols-7 gap-2">
+                ${['일', '월', '화', '수', '목', '금', '토'].map(d => `
+                  <div class="text-center text-[10px] font-black text-neutral-400 py-2">${d}</div>
+                `).join('')}
+                ${dayArray.map((day, idx) => {
+                  if (!day) return '<div></div>';
+                  const daySchedules = monthSchedules.filter(s => {
+                    const start = new Date(s.startDate);
+                    return start.getDate() === day;
+                  });
+                  return `
+                    <div class="border border-neutral-100 rounded-lg p-2 min-h-20 bg-white hover:bg-neutral-50 transition-colors cursor-pointer" onclick="openScheduleDay(${day})">
+                      <div class="text-sm font-black mb-1">${day}</div>
+                      <div class="space-y-1">
+                        ${daySchedules.slice(0, 2).map(s => `
+                          <div class="text-[8px] px-1 py-0.5 rounded border ${typeColors[s.type] || typeColors['기타']}">${s.type}</div>
+                        `).join('')}
+                        ${daySchedules.length > 2 ? `<div class="text-[8px] text-neutral-400">+${daySchedules.length - 2}</div>` : ''}
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            </div>
+
+            <!-- 일정 목록 -->
+            <div class="space-y-3 mb-6">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-black">${year}년 ${month + 1}월 일정</h3>
+                <button onclick="openAddSchedule()" class="bg-black text-white rounded-lg px-4 py-2 text-[10px] font-black hover:bg-neutral-800 transition-colors">+ 일정 추가</button>
+              </div>
+              ${monthSchedules.length > 0 ? monthSchedules.map(s => `
+                <div class="bg-white border border-neutral-200 rounded-xl p-4">
+                  <div class="flex items-start justify-between mb-2">
+                    <div>
+                      <h4 class="font-black text-sm mb-1">${s.title}</h4>
+                      <span class="text-[9px] px-2 py-1 rounded border ${typeColors[s.type] || typeColors['기타']}">${s.type}</span>
+                    </div>
+                    <button onclick="deleteSchedule('${s.id}')" class="text-neutral-300 hover:text-red-500 transition-colors">
+                      <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                  </div>
+                  <p class="text-[10px] text-neutral-500 mt-2">${formatDate(s.startDate)} ~ ${formatDate(s.endDate)}</p>
+                  ${s.description ? `<p class="text-[10px] text-neutral-600 mt-2">${s.description}</p>` : ''}
+                </div>
+              `).join('') : '<p class="text-[10px] text-neutral-300 py-4">이번 달 일정이 없습니다.</p>'}
+            </div>
+
+            <!-- Google Calendar 연동 -->
+            <div class="bg-neutral-50 border border-neutral-200 rounded-xl p-4">
+              <button onclick="googleCalendarSync()" class="w-full bg-white border border-neutral-200 rounded-lg py-3 text-[11px] font-black hover:bg-neutral-50 transition-colors">
+                <i data-lucide="calendar-plus" class="w-4 h-4 inline mr-2"></i>Google Calendar 연동
+              </button>
+            </div>
+          </main>
+          ${renderFooter()}
+
+          <!-- 일정 추가 모달 -->
+          <div id="scheduleModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+            <div class="bg-white rounded-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-black">일정 추가</h3>
+                <button onclick="closeAddSchedule()" class="text-neutral-400 hover:text-black">
+                  <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+              </div>
+              <div class="space-y-4">
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">제목</label>
+                  <input type="text" id="scheduleTitle" placeholder="제목을 입력하세요" class="input-base mt-1">
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">일정 유형</label>
+                  <select id="scheduleType" class="input-base mt-1">
+                    <option value="박람회">박람회</option>
+                    <option value="연차">연차</option>
+                    <option value="쇼룸방문">쇼룸방문</option>
+                    <option value="기타">기타</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">시작일</label>
+                  <input type="date" id="scheduleStartDate" class="input-base mt-1">
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">종료일</label>
+                  <input type="date" id="scheduleEndDate" class="input-base mt-1">
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">설명</label>
+                  <textarea id="scheduleDescription" placeholder="설명을 입력하세요" class="input-base mt-1"></textarea>
+                </div>
+                <div class="flex gap-2">
+                  <button onclick="closeAddSchedule()" class="flex-1 bg-neutral-200 text-black rounded-xl py-3 font-black uppercase tracking-widest hover:bg-neutral-300 transition-colors text-[11px]">취소</button>
+                  <button onclick="saveSchedule()" class="flex-1 bg-black text-white rounded-xl py-3 font-black uppercase tracking-widest hover:bg-neutral-800 transition-colors text-[11px]">저장</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function schedulePrevMonth() {
+      scheduleMonth = new Date(scheduleMonth.getFullYear(), scheduleMonth.getMonth() - 1);
+      render();
+    }
+
+    function scheduleNextMonth() {
+      scheduleMonth = new Date(scheduleMonth.getFullYear(), scheduleMonth.getMonth() + 1);
+      render();
+    }
+
+    function openAddSchedule() {
+      scheduleModalOpen = true;
+      document.getElementById('scheduleModal').classList.remove('hidden');
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('scheduleStartDate').value = today;
+      document.getElementById('scheduleEndDate').value = today;
+    }
+
+    function closeAddSchedule() {
+      scheduleModalOpen = false;
+      document.getElementById('scheduleModal').classList.add('hidden');
+    }
+
+    async function saveSchedule() {
+      const title = document.getElementById('scheduleTitle').value;
+      const type = document.getElementById('scheduleType').value;
+      const startDate = document.getElementById('scheduleStartDate').value;
+      const endDate = document.getElementById('scheduleEndDate').value;
+      const description = document.getElementById('scheduleDescription').value;
+
+      if (!title || !startDate || !endDate) { alert('필수 항목을 입력하세요.'); return; }
+
+      try {
+        const { db, collection, addDoc, serverTimestamp } = window.WORKS_DB;
+        await addDoc(collection(db, 'works_schedules'), {
+          title, type, startDate, endDate, description,
+          createdBy: currentBranch || '본사',
+          createdAt: serverTimestamp()
+        });
+        closeAddSchedule();
+        alert('일정이 등록되었습니다.');
+      } catch(e) { console.error('Schedule save error:', e); alert('일정 등록 실패'); }
+    }
+
+    async function deleteSchedule(id) {
+      if (!confirm('이 일정을 삭제하시겠습니까?')) return;
+      try {
+        const { db, doc, deleteDoc } = window.WORKS_DB;
+        await deleteDoc(doc(db, 'works_schedules', id));
+      } catch(e) { console.error('Schedule delete error:', e); alert('삭제 실패'); }
+    }
+
+    function openScheduleDay(day) {
+      alert(`${scheduleMonth.getFullYear()}년 ${scheduleMonth.getMonth() + 1}월 ${day}일의 일정입니다.`);
+    }
+
+    function googleCalendarSync() {
+      alert('Blaze 업그레이드 후 설정 가능합니다');
+    }
+
+    // ===== Leave Request (연차신청서) =====
+    function renderLeave() {
+      const waitingCount = leaveRequests.filter(r => r.status === '대기').length;
+      const approvedCount = leaveRequests.filter(r => r.status === '승인').length;
+      const rejectedCount = leaveRequests.filter(r => r.status === '반려').length;
+
+      const statusColor = {
+        '대기': 'bg-yellow-100 text-yellow-700 border-yellow-300',
+        '승인': 'bg-green-100 text-green-700 border-green-300',
+        '반려': 'bg-red-100 text-red-700 border-red-300'
+      };
+
+      return `
+        <div class="min-h-screen bg-white animate-fade-in">
+          ${renderNav()}
+          <main class="pt-20 pb-20 max-w-5xl mx-auto px-6">
+            <div class="flex items-center justify-between mb-6">
+              <h1 class="text-3xl font-black tracking-tighter">연차신청서 전자결재</h1>
+              <button onclick="navigate('home')" class="text-neutral-400 hover:text-black transition-colors">
+                <i data-lucide="x" class="w-6 h-6"></i>
+              </button>
+            </div>
+
+            <!-- 통계 -->
+            <div class="grid grid-cols-3 gap-4 mb-6">
+              <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                <p class="text-[10px] text-yellow-600 font-black uppercase tracking-widest mb-1">대기중</p>
+                <p class="text-2xl font-black text-yellow-700">${waitingCount}</p>
+              </div>
+              <div class="bg-green-50 border border-green-200 rounded-xl p-4">
+                <p class="text-[10px] text-green-600 font-black uppercase tracking-widest mb-1">승인됨</p>
+                <p class="text-2xl font-black text-green-700">${approvedCount}</p>
+              </div>
+              <div class="bg-red-50 border border-red-200 rounded-xl p-4">
+                <p class="text-[10px] text-red-600 font-black uppercase tracking-widest mb-1">반려됨</p>
+                <p class="text-2xl font-black text-red-700">${rejectedCount}</p>
+              </div>
+            </div>
+
+            <!-- 신청 버튼 -->
+            <div class="mb-6">
+              <button onclick="openLeaveRequest()" class="bg-black text-white rounded-xl px-4 py-3 text-[11px] font-black uppercase tracking-widest hover:bg-neutral-800 transition-colors">+ 연차신청</button>
+            </div>
+
+            <!-- 신청 내역 -->
+            <div class="space-y-3">
+              <h3 class="text-sm font-black">신청 내역</h3>
+              ${leaveRequests.length > 0 ? leaveRequests.map(req => `
+                <div class="bg-white border border-neutral-200 rounded-xl p-4">
+                  <div class="flex items-start justify-between mb-3">
+                    <div>
+                      <h4 class="font-black text-sm mb-1">${req.applicant}</h4>
+                      <span class="text-[9px] px-2 py-1 rounded border ${statusColor[req.status] || statusColor['대기']}">${req.status}</span>
+                    </div>
+                    ${currentType === 'hq' && req.status === '대기' ? `
+                      <div class="flex gap-2">
+                        <button onclick="approveLeave('${req.id}')" class="bg-green-100 text-green-700 rounded px-3 py-1 text-[9px] font-black hover:bg-green-200 transition-colors">승인</button>
+                        <button onclick="rejectLeave('${req.id}')" class="bg-red-100 text-red-700 rounded px-3 py-1 text-[9px] font-black hover:bg-red-200 transition-colors">반려</button>
+                      </div>
+                    ` : ''}
+                  </div>
+                  <div class="grid grid-cols-2 gap-3 text-[10px] text-neutral-600">
+                    <div><span class="font-black">유형:</span> ${req.type}</div>
+                    <div><span class="font-black">기간:</span> ${formatDate(req.startDate)} ~ ${formatDate(req.endDate)}</div>
+                    <div><span class="font-black">사유:</span> ${req.reason}</div>
+                    ${req.approvedBy ? `<div><span class="font-black">결재:</span> ${req.approvedBy}</div>` : ''}
+                  </div>
+                </div>
+              `).join('') : '<p class="text-[10px] text-neutral-300 py-4">신청 내역이 없습니다.</p>'}
+            </div>
+          </main>
+          ${renderFooter()}
+
+          <!-- 연차신청 모달 -->
+          <div id="leaveModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm">
+            <div class="bg-white rounded-2xl p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+              <div class="flex items-center justify-between mb-4">
+                <h3 class="text-lg font-black">연차신청</h3>
+                <button onclick="closeLeaveRequest()" class="text-neutral-400 hover:text-black">
+                  <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
+              </div>
+              <div class="space-y-4">
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">신청자</label>
+                  <input type="text" id="leaveApplicant" placeholder="성명" value="${currentManager}" class="input-base mt-1">
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">연차 유형</label>
+                  <select id="leaveType" class="input-base mt-1">
+                    <option value="연차">연차</option>
+                    <option value="반차">반차</option>
+                    <option value="병가">병가</option>
+                    <option value="경조사">경조사</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">시작일</label>
+                  <input type="date" id="leaveStartDate" class="input-base mt-1">
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">종료일</label>
+                  <input type="date" id="leaveEndDate" class="input-base mt-1">
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">사유</label>
+                  <textarea id="leaveReason" placeholder="사유를 입력하세요" class="input-base mt-1"></textarea>
+                </div>
+                <div class="flex gap-2">
+                  <button onclick="closeLeaveRequest()" class="flex-1 bg-neutral-200 text-black rounded-xl py-3 font-black uppercase tracking-widest hover:bg-neutral-300 transition-colors text-[11px]">취소</button>
+                  <button onclick="saveLeaveRequest()" class="flex-1 bg-black text-white rounded-xl py-3 font-black uppercase tracking-widest hover:bg-neutral-800 transition-colors text-[11px]">신청</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function openLeaveRequest() {
+      leaveModalOpen = true;
+      document.getElementById('leaveModal').classList.remove('hidden');
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('leaveStartDate').value = today;
+      document.getElementById('leaveEndDate').value = today;
+    }
+
+    function closeLeaveRequest() {
+      leaveModalOpen = false;
+      document.getElementById('leaveModal').classList.add('hidden');
+    }
+
+    async function saveLeaveRequest() {
+      const applicant = document.getElementById('leaveApplicant').value;
+      const type = document.getElementById('leaveType').value;
+      const startDate = document.getElementById('leaveStartDate').value;
+      const endDate = document.getElementById('leaveEndDate').value;
+      const reason = document.getElementById('leaveReason').value;
+
+      if (!applicant || !startDate || !endDate || !reason) { alert('필수 항목을 입력하세요.'); return; }
+
+      try {
+        const { db, collection, addDoc, serverTimestamp } = window.WORKS_DB;
+        await addDoc(collection(db, 'works_leave_requests'), {
+          applicant, type, startDate, endDate, reason,
+          status: '대기',
+          createdAt: serverTimestamp()
+        });
+        closeLeaveRequest();
+        alert('신청이 등록되었습니다.');
+      } catch(e) { console.error('Leave save error:', e); alert('신청 등록 실패'); }
+    }
+
+    async function approveLeave(id) {
+      if (!confirm('이 신청을 승인하시겠습니까?')) return;
+      try {
+        const { db, doc, updateDoc } = window.WORKS_DB;
+        await updateDoc(doc(db, 'works_leave_requests', id), {
+          status: '승인',
+          approvedBy: currentManager || '본사',
+          approvedAt: new Date().toISOString()
+        });
+      } catch(e) { console.error('Approve error:', e); alert('승인 실패'); }
+    }
+
+    async function rejectLeave(id) {
+      if (!confirm('이 신청을 반려하시겠습니까?')) return;
+      try {
+        const { db, doc, updateDoc } = window.WORKS_DB;
+        await updateDoc(doc(db, 'works_leave_requests', id), {
+          status: '반려',
+          approvedBy: currentManager || '본사',
+          approvedAt: new Date().toISOString()
+        });
+      } catch(e) { console.error('Reject error:', e); alert('반려 실패'); }
+    }
+
+    // ===== Showroom Reservation (쇼룸예약 관리) =====
+    function renderShowroomMgmt() {
+      const statusColor = {
+        '예약요청': 'bg-blue-100 text-blue-700 border-blue-300',
+        '확정': 'bg-purple-100 text-purple-700 border-purple-300',
+        '방문완료': 'bg-green-100 text-green-700 border-green-300',
+        '취소': 'bg-gray-100 text-gray-700 border-gray-300'
+      };
+
+      const filteredReservations = showroomFilter === '전체'
+        ? showroomReservations
+        : showroomReservations.filter(r => r.showroom === showroomFilter);
+
+      const showrooms = [...new Set(showroomReservations.map(r => r.showroom || '기본'))];
+
+      return `
+        <div class="min-h-screen bg-white animate-fade-in">
+          ${renderNav()}
+          <main class="pt-20 pb-20 max-w-6xl mx-auto px-6">
+            <div class="flex items-center justify-between mb-6">
+              <h1 class="text-3xl font-black tracking-tighter">쇼룸예약 관리</h1>
+              <button onclick="navigate('home')" class="text-neutral-400 hover:text-black transition-colors">
+                <i data-lucide="x" class="w-6 h-6"></i>
+              </button>
+            </div>
+
+            <!-- 필터 -->
+            <div class="bg-white border border-neutral-200 rounded-xl p-4 mb-6 flex gap-2">
+              <select id="showroomFilter" class="input-base" onchange="updateShowroomFilter(this.value)">
+                <option value="전체">전체 쇼룸</option>
+                ${showrooms.map(s => `<option value="${s}">${s}</option>`).join('')}
+              </select>
+            </div>
+
+            <!-- 예약 테이블 -->
+            <div class="bg-white border border-neutral-200 rounded-xl overflow-hidden">
+              <table class="w-full text-[11px]">
+                <thead class="bg-neutral-50 border-b border-neutral-200">
+                  <tr>
+                    <th class="px-4 py-3 text-left font-black">쇼룸</th>
+                    <th class="px-4 py-3 text-left font-black">예약일시</th>
+                    <th class="px-4 py-3 text-left font-black">고객명</th>
+                    <th class="px-4 py-3 text-left font-black">연락처</th>
+                    <th class="px-4 py-3 text-left font-black">관심제품</th>
+                    <th class="px-4 py-3 text-left font-black">상태</th>
+                    <th class="px-4 py-3 text-center font-black">액션</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${filteredReservations.length > 0 ? filteredReservations.map(res => `
+                    <tr class="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">
+                      <td class="px-4 py-3">${res.showroom || '기본'}</td>
+                      <td class="px-4 py-3">${formatDate(res.date)} ${res.time || ''}</td>
+                      <td class="px-4 py-3 font-black">${res.name}</td>
+                      <td class="px-4 py-3">${res.phone}</td>
+                      <td class="px-4 py-3 text-[10px]">${res.products || '-'}</td>
+                      <td class="px-4 py-3">
+                        <select class="text-[10px] px-2 py-1 rounded border ${statusColor[res.status] || statusColor['예약요청']}" onchange="updateReservationStatus('${res.id}', this.value)">
+                          <option value="예약요청" ${res.status === '예약요청' ? 'selected' : ''}>예약요청</option>
+                          <option value="확정" ${res.status === '확정' ? 'selected' : ''}>확정</option>
+                          <option value="방문완료" ${res.status === '방문완료' ? 'selected' : ''}>방문완료</option>
+                          <option value="취소" ${res.status === '취소' ? 'selected' : ''}>취소</option>
+                        </select>
+                      </td>
+                      <td class="px-4 py-3 text-center">
+                        <button onclick="deleteReservation('${res.id}')" class="text-neutral-300 hover:text-red-500 transition-colors">
+                          <i data-lucide="trash-2" class="w-4 h-4"></i>
+                        </button>
+                      </td>
+                    </tr>
+                  `).join('') : `
+                    <tr><td colspan="7" class="px-4 py-8 text-center text-neutral-300 text-[10px]">예약이 없습니다.</td></tr>
+                  `}
+                </tbody>
+              </table>
+            </div>
+
+            <!-- 메모 -->
+            <div class="mt-6 bg-neutral-50 border border-neutral-200 rounded-xl p-4">
+              <p class="text-[10px] text-neutral-500">
+                <i data-lucide="info" class="w-4 h-4 inline mr-2"></i>
+                상태 변경: 예약요청 → 확정 → 방문완료 → 취소
+              </p>
+            </div>
+          </main>
+          ${renderFooter()}
+        </div>
+      `;
+    }
+
+    function updateShowroomFilter(value) {
+      showroomFilter = value;
+      render();
+    }
+
+    async function updateReservationStatus(id, status) {
+      try {
+        const { db, doc, updateDoc } = window.WORKS_DB;
+        await updateDoc(doc(db, 'showroom_reservations', id), { status });
+      } catch(e) { console.error('Status update error:', e); alert('상태 업데이트 실패'); }
+    }
+
+    async function deleteReservation(id) {
+      if (!confirm('이 예약을 삭제하시겠습니까?')) return;
+      try {
+        const { db, doc, deleteDoc } = window.WORKS_DB;
+        await deleteDoc(doc(db, 'showroom_reservations', id));
+      } catch(e) { console.error('Delete error:', e); alert('삭제 실패'); }
+    }
+
     // ===== 초기화 =====
     document.addEventListener('DOMContentLoaded', () => {
       initFromURL();
@@ -3280,6 +3873,9 @@
           subscribeOrders();
           subscribeNotices();
           subscribeCustomers();
+          subscribeSchedules();
+          subscribeLeaveRequests();
+          subscribeShowroomReservations();
           render();
         }
       }, 100);
