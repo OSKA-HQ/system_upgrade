@@ -796,6 +796,33 @@
                 capped_msg: res.isCapped ? '※ 최대 규격 초과' : ''
             };
             try { await emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, templateParams); } catch(e) { console.error("Email Error", e); }
+
+            // Firestore CRM 자동 저장
+            try {
+              const { db, collection, addDoc, serverTimestamp } = window.TC_CRM_DB;
+              const now = new Date();
+              await addDoc(collection(db, 'crm_customers'), {
+                brand: '테라까사',
+                date: now.toISOString().slice(0, 10),
+                year: now.getFullYear() + '년',
+                month: (now.getMonth() + 1) + '월',
+                channel: '도슨트투어',
+                consent: '동의',
+                phone: formData.phone,
+                email: '',
+                product: '파고라',
+                custType: '개인',
+                grade: '',
+                grade2: '',
+                province: formData.regionDo,
+                district: formData.regionSi,
+                address: '',
+                assignedBranch: '',
+                status: '미배정',
+                content: `[테라까사 도슨트] 유형: ${formData.userType} / 작동: ${formData.operationType === 'manual' ? '수동' : '전동'} / 사이즈: ${formData.width}m x ${formData.projection}m / 옵션: ${formData.optionLed?'LED ':''}${formData.optionGlass!=='none'?'글라스도어 ':''}${formData.optionDeck?'데크':''}/ 시기: ${formData.timeline} / 견적: ₩${res.totalPrice.toLocaleString()}`,
+                createdAt: serverTimestamp()
+              });
+            } catch(e) { console.log('Firestore CRM 저장 오류:', e); }
         }
 
         async function submitConsultation() {
