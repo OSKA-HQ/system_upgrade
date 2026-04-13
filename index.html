@@ -80,6 +80,8 @@
     let ACCOUNT_TYPES = {};
     // 계정별 담당자: { '강북지사': '이범호 이사', '강남지사': '백원준 이사' }
     let ACCOUNT_MANAGERS = {};
+    // 지사/대리점 데이터: { '지사명': { type, bizNumber, address, email, phone, ownerName, staff: [{id, pw, name, phone, email}, ...] } }
+    let BRANCHES = {};
 
     const DEFAULT_ARCHIVE_ITEMS = [
       { title: '공식 홈페이지', sub: 'oska.co.kr', icon: 'home', url: 'http://www.oska.co.kr' },
@@ -111,7 +113,8 @@
       adminTab: 'accounts',
       adminMsg: '',
       adminMsgType: 'success',
-      editingArchiveIdx: -1
+      editingArchiveIdx: -1,
+      expandedBranch: null
     };
 
     function setState(newState) {
@@ -201,6 +204,7 @@
           if (!ACCOUNT_SETTINGS.hidden) ACCOUNT_SETTINGS.hidden = [];
           ACCOUNT_TYPES = data.accountTypes || {};
           ACCOUNT_MANAGERS = data.accountManagers || {};
+          BRANCHES = data.branches || {};
           // 기존 계정 중 유형이 없는 계정에 기본값 설정
           Object.keys(ACCOUNTS).forEach(name => {
             if (!ACCOUNT_TYPES[name]) {
@@ -290,6 +294,32 @@
         }
         setState({ isLoggedIn: true, currentUser: inputId, loginError: '', loginPw: '', loginId: '' });
       } else {
+        // BRANCHES staff 체크 (마스터/기존 ACCOUNTS 체크 다음에)
+        let staffMatch = null;
+        let staffBranch = null;
+        Object.entries(BRANCHES).forEach(([bName, bData]) => {
+          (bData.staff || []).forEach(s => {
+            if (s.id === inputId && s.pw === inputPw) {
+              staffMatch = s;
+              staffBranch = bName;
+            }
+          });
+        });
+        if (staffMatch) {
+          const bType = BRANCHES[staffBranch].type || 'branch';
+          const categoryMap = { '본사': 'hq', '지사': 'branch', '대리점': 'dealer', '기타': '' };
+          const expectedType = categoryMap[inputCategory] || '';
+          if (inputCategory !== '기타' && bType && bType !== expectedType) {
+            setState({ loginError: '선택한 카테고리와 계정 유형이 일치하지 않습니다.' });
+            return;
+          }
+          if (bType !== 'hq') sendLoginNotification(staffBranch + ' / ' + staffMatch.name, '***');
+          setState({ isLoggedIn: true, currentUser: staffBranch, loginError: '', loginPw: '', loginId: '' });
+          // iframe에 전달될 manager 정보 설정
+          ACCOUNT_MANAGERS[staffBranch] = staffMatch.name;
+          ACCOUNT_TYPES[staffBranch] = bType;
+          return;
+        }
         setState({ loginError: '아이디 또는 비밀번호가 일치하지 않습니다.' });
       }
     }
@@ -850,6 +880,82 @@
       setTimeout(() => { state.adminMsg = ''; render(); }, 3000);
     }
 
+    // ===== 지사/대리점 관리 Firestore CRUD =====
+    async function saveBranchesToFirestore() {
+      const { db, appId, doc, updateDoc } = window.OSKA_DB;
+      const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+      try { await updateDoc(configRef, { branches: BRANCHES }); return true; }
+      catch (e) { console.error('Save branches error:', e); return false; }
+    }
+
+    async function addBranch(name, type, bizNumber, address, email, phone, ownerName) {
+      if (!name || !type) return showAdminMsg('지사명과 유형을 입력하세요.', 'error');
+      if (BRANCHES[name]) return showAdminMsg(`"${name}"은(는) 이미 존재합니다.`, 'error');
+      BRANCHES[name] = {
+        type: type || 'branch',
+        bizNumber: bizNumber || '',
+        address: address || '',
+        email: email || '',
+        phone: phone || '',
+        ownerName: ownerName || '',
+        staff: []
+      };
+      const ok = await saveBranchesToFirestore();
+      showAdminMsg(ok ? `"${name}" 지사가 등록되었습니다.` : '저장 실패.', ok ? 'success' : 'error');
+      render();
+    }
+
+    async function deleteBranch(name) {
+      if (name === '본사') return showAdminMsg('본사는 삭제할 수 없습니다.', 'error');
+      if (!confirm(`"${name}" 지사를 삭제하시겠습니까?`)) return;
+      delete BRANCHES[name];
+      const ok = await saveBranchesToFirestore();
+      showAdminMsg(ok ? `"${name}" 지사가 삭제되었습니다.` : '저장 실패.', ok ? 'success' : 'error');
+      render();
+    }
+
+    async function addStaff(branchName, id, pw, name, phone, email) {
+      if (!branchName || !id || !pw || !name) return showAdminMsg('필수 정보를 모두 입력하세요.', 'error');
+      if (!BRANCHES[branchName]) return showAdminMsg(`"${branchName}" 지사를 찾을 수 없습니다.`, 'error');
+      // 같은 ID가 이미 있는지 확인
+      if ((BRANCHES[branchName].staff || []).some(s => s.id === id)) {
+        return showAdminMsg(`ID "${id}"는 이미 존재합니다.`, 'error');
+      }
+      if (!BRANCHES[branchName].staff) BRANCHES[branchName].staff = [];
+      BRANCHES[branchName].staff.push({
+        id: id,
+        pw: pw,
+        name: name,
+        phone: phone || '',
+        email: email || BRANCHES[branchName].email || ''
+      });
+      const ok = await saveBranchesToFirestore();
+      showAdminMsg(ok ? `"${name}" 담당자가 추가되었습니다.` : '저장 실패.', ok ? 'success' : 'error');
+      render();
+    }
+
+    async function deleteStaff(branchName, staffIdx) {
+      if (!BRANCHES[branchName] || !BRANCHES[branchName].staff) return;
+      const staff = BRANCHES[branchName].staff[staffIdx];
+      if (!staff) return;
+      if (!confirm(`"${staff.name}" 담당자를 삭제하시겠습니까?`)) return;
+      BRANCHES[branchName].staff.splice(staffIdx, 1);
+      const ok = await saveBranchesToFirestore();
+      showAdminMsg(ok ? '담당자가 삭제되었습니다.' : '저장 실패.', ok ? 'success' : 'error');
+      render();
+    }
+
+    async function updateStaffPw(branchName, staffIdx, newPw) {
+      if (!newPw) return showAdminMsg('새 비밀번호를 입력하세요.', 'error');
+      if (!BRANCHES[branchName] || !BRANCHES[branchName].staff) return;
+      const staff = BRANCHES[branchName].staff[staffIdx];
+      if (!staff) return;
+      staff.pw = newPw;
+      const ok = await saveBranchesToFirestore();
+      showAdminMsg(ok ? `"${staff.name}" 비밀번호가 변경되었습니다.` : '저장 실패.', ok ? 'success' : 'error');
+      render();
+    }
+
     // ===== 관리자 패널 렌더링 =====
     function renderAdmin() {
       const allBranches = getOrderedBranches(true);
@@ -880,6 +986,9 @@
               <button class="admin-tab px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'accounts' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="accounts">
                 <i data-lucide="users" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>계정 관리
               </button>
+              <button class="admin-tab px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'branches' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="branches">
+                <i data-lucide="map-pin" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>지사 관리
+              </button>
               <button class="admin-tab px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'registration' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="registration">
                 <i data-lucide="user-plus" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>등록 요청
                 ${state._regRequests && state._regRequests.filter(r => r.status === 'pending').length > 0 ? `<span class="ml-1 bg-red-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">${state._regRequests.filter(r => r.status === 'pending').length}</span>` : ''}
@@ -889,7 +998,7 @@
               </button>
             </div>
 
-            ${state.adminTab === 'accounts' ? renderAdminAccounts(allBranches) : state.adminTab === 'registration' ? renderAdminRegistration() : renderAdminArchive()}
+            ${state.adminTab === 'accounts' ? renderAdminAccounts(allBranches) : state.adminTab === 'branches' ? renderAdminBranches() : state.adminTab === 'registration' ? renderAdminRegistration() : renderAdminArchive()}
           </main>
         </div>
       `;
@@ -1204,6 +1313,147 @@
       `;
     }
 
+    function renderAdminBranches() {
+      const branchNames = Object.keys(BRANCHES).sort((a, b) => {
+        const typeOrder = { 'hq': 0, 'branch': 1, 'dealer': 2 };
+        const typeA = BRANCHES[a].type || 'branch';
+        const typeB = BRANCHES[b].type || 'branch';
+        return typeOrder[typeA] - typeOrder[typeB];
+      });
+
+      return `
+        <div class="space-y-6">
+          <!-- 새 지사/대리점 등록 -->
+          <div class="bg-white rounded-2xl border border-neutral-200 p-6 shadow-sm">
+            <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em] mb-4">
+              <i data-lucide="plus-circle" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>새 지사/대리점 등록
+            </h3>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <select id="branchType" class="h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all cursor-pointer">
+                <option value="branch">지사</option>
+                <option value="dealer">대리점</option>
+              </select>
+              <input id="branchName" type="text" placeholder="지사명 (예: 강남지사)" class="h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all" />
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <input id="branchBizNum" type="text" placeholder="사업자등록번호 (000-00-00000)" class="h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all" maxlength="12" />
+              <input id="branchPhone" type="text" placeholder="대표 전화" class="h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all" />
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+              <input id="branchEmail" type="email" placeholder="대표 이메일" class="h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all" />
+              <input id="branchOwner" type="text" placeholder="대표자명" class="h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all" />
+            </div>
+            <input id="branchAddress" type="text" placeholder="소재지 (주소)" class="w-full h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all mb-3" />
+            <button id="btnAddBranch" class="w-full h-11 px-6 bg-black text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-neutral-800 transition-all">등록</button>
+          </div>
+
+          <!-- 등록된 지사/대리점 목록 -->
+          <div class="space-y-4">
+            ${branchNames.length === 0 ? `
+              <div class="bg-white border border-neutral-200 rounded-2xl p-8 text-center">
+                <i data-lucide="map-pin" class="w-8 h-8 text-neutral-200 mx-auto mb-3"></i>
+                <p class="text-sm text-neutral-300 font-bold">등록된 지사/대리점이 없습니다</p>
+              </div>
+            ` : branchNames.map((branchName) => {
+              const branch = BRANCHES[branchName];
+              const typeLabel = branch.type === 'dealer' ? '대리점' : '지사';
+              const typeColor = branch.type === 'dealer' ? 'border-purple-200 bg-purple-50' : 'border-blue-200 bg-blue-50';
+              const isExpanded = state.expandedBranch === branchName;
+              const staff = branch.staff || [];
+
+              return `
+              <div class="bg-white rounded-2xl border ${typeColor} shadow-sm overflow-hidden">
+                <!-- 지사 헤더 -->
+                <div class="px-6 py-4 border-b border-neutral-100">
+                  <div class="flex items-start justify-between">
+                    <div class="flex-1">
+                      <div class="flex items-center gap-3 mb-2">
+                        <h3 class="text-lg font-black">${branchName}</h3>
+                        <span class="text-[8px] font-black px-2 py-0.5 rounded ${branch.type === 'dealer' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">${typeLabel}</span>
+                      </div>
+                      <div class="text-[10px] text-neutral-400 space-y-0.5 font-bold">
+                        ${branch.bizNumber ? `<p>사업자: ${branch.bizNumber}</p>` : ''}
+                        ${branch.address ? `<p>주소: ${branch.address}</p>` : ''}
+                        ${branch.phone ? `<p>전화: ${branch.phone}</p>` : ''}
+                        ${branch.email ? `<p>이메일: ${branch.email}</p>` : ''}
+                        ${branch.ownerName ? `<p>대표: ${branch.ownerName}</p>` : ''}
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <button class="btn-toggle-branch h-9 px-4 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-black uppercase hover:bg-blue-100 transition-all" data-branch="${branchName}">
+                        ${isExpanded ? '접기' : '담당자관리'}
+                      </button>
+                      <button class="btn-delete-branch h-9 px-4 bg-red-50 text-red-600 rounded-lg text-[10px] font-black uppercase hover:bg-red-100 transition-all" data-branch="${branchName}">삭제</button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 담당자 목록 (펼쳐짐) -->
+                ${isExpanded ? `
+                <div class="px-6 py-4 bg-blue-50/30 space-y-4">
+                  <!-- 담당자 테이블 -->
+                  ${staff.length > 0 ? `
+                  <div>
+                    <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-3">담당자 (${staff.length}명)</p>
+                    <div class="border border-neutral-200 rounded-xl overflow-hidden">
+                      <table class="w-full text-[10px]">
+                        <thead>
+                          <tr class="bg-neutral-50 border-b border-neutral-200">
+                            <th class="px-3 py-2 text-left font-black text-neutral-400">아이디</th>
+                            <th class="px-3 py-2 text-left font-black text-neutral-400">이름</th>
+                            <th class="px-3 py-2 text-left font-black text-neutral-400">전화</th>
+                            <th class="px-3 py-2 text-left font-black text-neutral-400">이메일</th>
+                            <th class="px-3 py-2 text-left font-black text-neutral-400">비밀번호</th>
+                            <th class="px-3 py-2 text-center font-black text-neutral-400">작업</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          ${staff.map((s, idx) => `
+                          <tr class="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">
+                            <td class="px-3 py-2 font-bold">${s.id}</td>
+                            <td class="px-3 py-2 font-bold">${s.name}</td>
+                            <td class="px-3 py-2 text-neutral-400">${s.phone || '-'}</td>
+                            <td class="px-3 py-2 text-neutral-400 truncate max-w-xs">${s.email || '-'}</td>
+                            <td class="px-3 py-2 font-bold text-center text-neutral-500">••••</td>
+                            <td class="px-3 py-2 text-center">
+                              <button class="btn-delete-staff h-6 px-2 bg-red-50 text-red-600 rounded text-[9px] font-black uppercase hover:bg-red-100 transition-all" data-branch="${branchName}" data-idx="${idx}">삭제</button>
+                            </td>
+                          </tr>
+                          `).join('')}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                  ` : `
+                  <div class="text-center py-4">
+                    <p class="text-[10px] text-neutral-300 font-bold">등록된 담당자가 없습니다</p>
+                  </div>
+                  `}
+
+                  <!-- 담당자 추가 폼 -->
+                  <div class="bg-white rounded-xl border border-blue-200 p-4 space-y-3">
+                    <p class="text-[9px] font-black text-blue-600 uppercase tracking-widest">담당자 추가</p>
+                    <div class="grid grid-cols-2 gap-2">
+                      <input class="staff-id h-10 px-3 bg-white border border-neutral-200 rounded-lg text-[10px] font-bold focus:border-black outline-none" placeholder="아이디" data-branch="${branchName}" />
+                      <input class="staff-pw h-10 px-3 bg-white border border-neutral-200 rounded-lg text-[10px] font-bold focus:border-black outline-none" type="password" placeholder="비밀번호" data-branch="${branchName}" />
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                      <input class="staff-name h-10 px-3 bg-white border border-neutral-200 rounded-lg text-[10px] font-bold focus:border-black outline-none" placeholder="이름" data-branch="${branchName}" />
+                      <input class="staff-phone h-10 px-3 bg-white border border-neutral-200 rounded-lg text-[10px] font-bold focus:border-black outline-none" placeholder="전화" data-branch="${branchName}" />
+                    </div>
+                    <input class="staff-email h-10 px-3 bg-white border border-neutral-200 rounded-lg text-[10px] font-bold focus:border-black outline-none w-full" placeholder="이메일 (빈칸이면 지사 이메일 사용)" data-branch="${branchName}" />
+                    <button class="btn-add-staff w-full h-10 px-3 bg-blue-600 text-white rounded-lg text-[10px] font-black uppercase hover:bg-blue-700 transition-all" data-branch="${branchName}">추가</button>
+                  </div>
+                </div>
+                ` : ''}
+              </div>
+              `;
+            }).join('')}
+          </div>
+        </div>
+      `;
+    }
+
     function renderAdminArchive() {
       return `
         <div class="space-y-6">
@@ -1432,6 +1682,62 @@
       // Archive 삭제
       document.querySelectorAll('.btn-delete-archive').forEach(btn => {
         btn.addEventListener('click', () => deleteArchiveItem(parseInt(btn.dataset.idx)));
+      });
+
+      // 지사 관리 탭 이벤트
+      if (document.getElementById('btnAddBranch')) {
+        document.getElementById('btnAddBranch').addEventListener('click', () => {
+          const type = document.getElementById('branchType').value;
+          const name = document.getElementById('branchName').value.trim();
+          const bizNum = document.getElementById('branchBizNum').value.trim();
+          const address = document.getElementById('branchAddress').value.trim();
+          const email = document.getElementById('branchEmail').value.trim();
+          const phone = document.getElementById('branchPhone').value.trim();
+          const owner = document.getElementById('branchOwner').value.trim();
+          addBranch(name, type, bizNum, address, email, phone, owner);
+        });
+      }
+
+      // 담당자 관리 펼치기/접기
+      document.querySelectorAll('.btn-toggle-branch').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const branchName = btn.dataset.branch;
+          if (state.expandedBranch === branchName) {
+            setState({ expandedBranch: null });
+          } else {
+            setState({ expandedBranch: branchName });
+          }
+        });
+      });
+
+      // 담당자 추가
+      document.querySelectorAll('.btn-add-staff').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const branchName = btn.dataset.branch;
+          const staffId = document.querySelector(`.staff-id[data-branch="${branchName}"]`).value.trim();
+          const staffPw = document.querySelector(`.staff-pw[data-branch="${branchName}"]`).value;
+          const staffName = document.querySelector(`.staff-name[data-branch="${branchName}"]`).value.trim();
+          const staffPhone = document.querySelector(`.staff-phone[data-branch="${branchName}"]`).value.trim();
+          const staffEmail = document.querySelector(`.staff-email[data-branch="${branchName}"]`).value.trim();
+          addStaff(branchName, staffId, staffPw, staffName, staffPhone, staffEmail);
+        });
+      });
+
+      // 담당자 삭제
+      document.querySelectorAll('.btn-delete-staff').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const branchName = btn.dataset.branch;
+          const staffIdx = parseInt(btn.dataset.idx);
+          deleteStaff(branchName, staffIdx);
+        });
+      });
+
+      // 지사 삭제
+      document.querySelectorAll('.btn-delete-branch').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const branchName = btn.dataset.branch;
+          deleteBranch(branchName);
+        });
       });
     }
 
