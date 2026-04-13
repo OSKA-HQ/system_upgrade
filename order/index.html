@@ -1843,8 +1843,9 @@
     }
 
     function isConverted(c) {
-      // 전환 = 지사 배정됨
-      return !!(c.assignedBranch && c.assignedBranch.trim());
+      // 전환 = 지사 배정됨 (본사는 미배정 상태이므로 제외)
+      const b = (c.assignedBranch || '').trim();
+      return !!(b && b !== '본사');
     }
 
     function renderDashboardPage() {
