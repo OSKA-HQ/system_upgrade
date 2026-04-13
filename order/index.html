@@ -3030,16 +3030,36 @@
           return true;
         });
 
+        // 이미 아카이브된 원본 ID 목록 수집 (중복 방지)
+        const existingArchiveSnap = await getDocs(collection(db, 'crm_customers_archive'));
+        const archivedOriginalIds = new Set();
+        existingArchiveSnap.forEach(d => {
+          const origId = d.data().originalDocId;
+          if (origId) archivedOriginalIds.add(origId);
+        });
+
         const CHUNK = 20;
         let moved = 0;
+        let skipped = 0;
         for (let i = 0; i < toArchive.length; i += CHUNK) {
           const slice = toArchive.slice(i, i + CHUNK);
           await Promise.all(slice.map(async ({ id, data }) => {
-            await addDoc(collection(db, 'crm_customers_archive'), {
-              ...data, archivedAt: new Date().toISOString(), originalDocId: id
-            });
-            await deleteDoc(doc(db, 'crm_customers', id));
-            moved++;
+            try {
+              if (archivedOriginalIds.has(id)) {
+                // 이미 아카이브에 있으면 원본만 삭제
+                await deleteDoc(doc(db, 'crm_customers', id));
+                skipped++;
+              } else {
+                await addDoc(collection(db, 'crm_customers_archive'), {
+                  ...data, archivedAt: new Date().toISOString(), originalDocId: id
+                });
+                await deleteDoc(doc(db, 'crm_customers', id));
+              }
+              moved++;
+            } catch(err) {
+              console.warn('아카이브 건너뜀:', id, err.message);
+              moved++;
+            }
           }));
           if (btn) btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i> ${moved}/${toArchive.length}`;
         }
