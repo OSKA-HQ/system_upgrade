@@ -2541,7 +2541,7 @@
                       <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${c.status === '미배정' ? 'bg-red-50 text-red-500 border border-red-200' : c.assignedBranch ? 'bg-green-50 text-green-600' : 'text-neutral-400'}">${c.status === '미배정' ? '미배정' : c.assignedBranch || '-'}</span></td>
                       <td class="px-3 py-3 text-center">
                         <div class="flex items-center justify-center gap-1.5">
-                          <button onclick="openCustomerHistory('${c.phone || ''}')" class="relative px-2 py-1 rounded-lg border text-[9px] font-black transition-all ${pCount >= 2 ? 'border-black bg-black text-white hover:bg-neutral-800' : 'border-neutral-200 text-neutral-400 hover:border-black hover:text-black'}" title="고객관리 (${pCount}회 문의)">
+                          <button onclick="openCustomerHistory('${c.phone || ''}', '${c.id}')" class="relative px-2 py-1 rounded-lg border text-[9px] font-black transition-all ${pCount >= 2 ? 'border-black bg-black text-white hover:bg-neutral-800' : 'border-neutral-200 text-neutral-400 hover:border-black hover:text-black'}" title="고객관리 (${pCount}회 문의)">
                             고객관리
                             ${pCount >= 2 ? `<span class="ml-0.5 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-[7px] font-black ${pCount >= 3 ? 'bg-red-500 text-white' : 'bg-white text-black'}">${pCount}</span>` : ''}
                           </button>
@@ -3560,32 +3560,40 @@
     }
 
     // ===== 고객관리 (전화번호 기준 문의 이력 — 아카이브 포함) =====
-    async function openCustomerHistory(phone) {
-      if (!phone || phone === '-') { alert('전화번호 정보가 없는 고객입니다.'); return; }
-      const phoneNorm = phone.replace(/[^0-9]/g, '');
+    async function openCustomerHistory(phone, docId) {
+      const hasPhone = phone && phone !== '-' && phone.trim() !== '';
+      const phoneNorm = hasPhone ? phone.replace(/[^0-9]/g, '') : '';
 
-      // 현재 CRM 데이터에서 검색
-      let records = customers.filter(c => c.phone && c.phone.replace(/[^0-9]/g, '') === phoneNorm);
+      let records = [];
 
-      // 아카이브 컬렉션에서도 검색
-      try {
-        const { db, collection, query, where, getDocs } = window.WORKS_DB;
-        if (db) {
-          const archiveSnap = await getDocs(collection(db, 'crm_customers_archive'));
-          archiveSnap.forEach(doc => {
-            const d = doc.data();
-            if (d.phone && d.phone.replace(/[^0-9]/g, '') === phoneNorm) {
-              records.push({ ...d, id: doc.id, _archived: true });
-            }
-          });
-        }
-      } catch (e) { console.log('아카이브 조회:', e); }
+      if (hasPhone) {
+        // 전화번호가 있으면 같은 번호 전체 검색
+        records = customers.filter(c => c.phone && c.phone.replace(/[^0-9]/g, '') === phoneNorm);
+
+        // 아카이브 컬렉션에서도 검색
+        try {
+          const { db, collection, query, where, getDocs } = window.WORKS_DB;
+          if (db) {
+            const archiveSnap = await getDocs(collection(db, 'crm_customers_archive'));
+            archiveSnap.forEach(doc => {
+              const d = doc.data();
+              if (d.phone && d.phone.replace(/[^0-9]/g, '') === phoneNorm) {
+                records.push({ ...d, id: doc.id, _archived: true });
+              }
+            });
+          }
+        } catch (e) { console.log('아카이브 조회:', e); }
+      } else if (docId) {
+        // 전화번호가 없으면 해당 건 1건만 표시
+        const single = customers.find(c => c.id === docId);
+        if (single) records = [single];
+      }
 
       records.sort((a, b) => {
         const da = a.date || ''; const db2 = b.date || '';
         return db2.localeCompare(da);
       });
-      if (records.length === 0) { alert('해당 전화번호의 고객 정보를 찾을 수 없습니다.'); return; }
+      if (records.length === 0) { alert('고객 정보를 찾을 수 없습니다.'); return; }
       const rep = records[0];
       const totalInquiries = records.length;
       const products = [...new Set(records.flatMap(r => (r.product || '').split(',').map(p => p.trim()).filter(Boolean)))];
@@ -3610,7 +3618,7 @@
                 <h3 class="text-sm font-black flex items-center gap-2">고객 관리
                   <span class="text-[9px] font-black px-2 py-0.5 rounded border ${gradeClass}">${latestGrade}</span>
                 </h3>
-                <p class="text-[10px] text-neutral-400 mt-0.5">${phone}</p>
+                <p class="text-[10px] text-neutral-400 mt-0.5">${hasPhone ? phone : '전화번호 없음'}</p>
               </div>
             </div>
             <button onclick="closeCustomerHistory()" class="text-neutral-400 hover:text-black transition-colors">
