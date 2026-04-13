@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OSKA | 쇼룸 예약</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100;300;400;500;700;900&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Firebase SDK (Firestore CRM 연동 - compat) -->
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
+    <script>
+      const __fbApp = firebase.initializeApp({
+        apiKey: "AIzaSyDs8IJANSBncJHcFFrF03pLM7JvEOppcY0",
+        authDomain: "oska-integrated-management.firebaseapp.com",
+        projectId: "oska-integrated-management",
+        storageBucket: "oska-integrated-management.firebasestorage.app",
+        messagingSenderId: "778732114280",
+        appId: "1:778732114280:web:96e00aff42bdbff3bf06dd"
+      });
+      firebase.auth().signInAnonymously()
+        .catch(function(err) { console.error('Firebase Auth Error:', err); });
+      window.SHOWROOM_DB = firebase.firestore();
+    </script>
+
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #ffffff;
+            color: #000000;
+            overflow-x: hidden;
+            letter-spacing: -0.02em;
+        }
+        .showroom-card {
+            border: 2px solid #f0f0f0;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            cursor: pointer;
+        }
+        .showroom-card:hover {
+            border-color: #000;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+        }
+        .showroom-card.selected {
+            border-color: #000;
+            background-color: #000;
+            color: #fff;
+        }
+        .showroom-card.selected .card-subtitle { color: rgba(255,255,255,0.6) !important; }
+        .showroom-card.selected .card-icon { color: #fff !important; }
+        .time-slot {
+            border: 1.5px solid #e5e5e5;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .time-slot:hover { border-color: #000; }
+        .time-slot.selected {
+            border-color: #000;
+            background-color: #000;
+            color: #fff;
+        }
+        .time-slot.disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        .product-chip {
+            border: 1.5px solid #e5e5e5;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .product-chip:hover { border-color: #000; }
+        .product-chip.selected {
+            border-color: #000;
+            background-color: #000;
+            color: #fff;
+        }
+        .step-section { display: none; }
+        .step-section.active { display: block; }
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: #000 !important;
+        }
+        .fade-in {
+            animation: fadeIn 0.4s ease-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-white min-h-screen">
+
+    <!-- 헤더 -->
+    <header class="fixed top-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-md border-b border-neutral-100">
+        <div class="max-w-lg mx-auto px-6 py-4 flex justify-between items-center">
+            <div>
+                <h1 class="text-[11px] font-black tracking-[0.3em] uppercase">OSKA SHOWROOM</h1>
+                <p class="text-[9px] text-neutral-400 tracking-widest uppercase mt-0.5">Reservation System</p>
+            </div>
+            <div id="step-indicator" class="text-[10px] font-bold text-neutral-300">
+                <span id="current-step-num">1</span> / 5
+            </div>
+        </div>
+        <!-- 진행바 -->
+        <div class="w-full h-[2px] bg-neutral-100">
+            <div id="progress-bar" class="h-full bg-black transition-all duration-500 ease-out" style="width: 20%;"></div>
+        </div>
+    </header>
+
+    <!-- 메인 컨텐츠 -->
+    <main class="max-w-lg mx-auto px-6 pt-24 pb-32">
+
+        <!-- STEP 1: 쇼룸 선택 -->
+        <section id="step-1" class="step-section active fade-in">
+            <div class="mb-8">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-[0.2em] mb-2">Step 01</p>
+                <h2 class="text-xl font-black leading-tight">방문하실 쇼룸을<br>선택해 주세요.</h2>
+            </div>
+            <div class="space-y-3" id="showroom-list">
+                <div class="showroom-card rounded-2xl p-5 flex items-center gap-4" onclick="selectShowroom(this, '서울 쇼룸')" data-showroom="서울 쇼룸">
+                    <div class="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="building-2" class="w-5 h-5 text-neutral-400 card-icon"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="font-bold text-sm">서울 쇼룸</p>
+                        <p class="text-[10px] text-neutral-400 card-subtitle mt-0.5">서울특별시 (샘플)</p>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-neutral-300 card-icon"></i>
+                </div>
+                <div class="showroom-card rounded-2xl p-5 flex items-center gap-4" onclick="selectShowroom(this, '경기 쇼룸')" data-showroom="경기 쇼룸">
+                    <div class="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="building-2" class="w-5 h-5 text-neutral-400 card-icon"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="font-bold text-sm">경기 쇼룸</p>
+                        <p class="text-[10px] text-neutral-400 card-subtitle mt-0.5">경기도 (샘플)</p>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-neutral-300 card-icon"></i>
+                </div>
+                <div class="showroom-card rounded-2xl p-5 flex items-center gap-4" onclick="selectShowroom(this, '부산 쇼룸')" data-showroom="부산 쇼룸">
+                    <div class="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="building-2" class="w-5 h-5 text-neutral-400 card-icon"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="font-bold text-sm">부산 쇼룸</p>
+                        <p class="text-[10px] text-neutral-400 card-subtitle mt-0.5">부산광역시 (샘플)</p>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-neutral-300 card-icon"></i>
+                </div>
+                <div class="showroom-card rounded-2xl p-5 flex items-center gap-4" onclick="selectShowroom(this, '대구 쇼룸')" data-showroom="대구 쇼룸">
+                    <div class="w-12 h-12 bg-neutral-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="building-2" class="w-5 h-5 text-neutral-400 card-icon"></i>
+                    </div>
+                    <div class="flex-1">
+                        <p class="font-bold text-sm">대구 쇼룸</p>
+                        <p class="text-[10px] text-neutral-400 card-subtitle mt-0.5">대구광역시 (샘플)</p>
+                    </div>
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-neutral-300 card-icon"></i>
+                </div>
+            </div>
+        </section>
+
+        <!-- STEP 2: 날짜 선택 -->
+        <section id="step-2" class="step-section fade-in">
+            <div class="mb-8">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-[0.2em] mb-2">Step 02</p>
+                <h2 class="text-xl font-black leading-tight">희망 방문 날짜를<br>선택해 주세요.</h2>
+            </div>
+            <div class="mb-4">
+                <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-2">방문 희망일</label>
+                <input type="date" id="visit-date" class="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm font-medium" onchange="onDateChange()">
+                <p class="text-[9px] text-neutral-400 mt-2">* 오늘 포함 2일 이후부터 30일 이내 날짜만 선택 가능합니다.</p>
+            </div>
+        </section>
+
+        <!-- STEP 3: 시간 선택 -->
+        <section id="step-3" class="step-section fade-in">
+            <div class="mb-8">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-[0.2em] mb-2">Step 03</p>
+                <h2 class="text-xl font-black leading-tight">희망 방문 시간을<br>선택해 주세요.</h2>
+                <p class="text-xs text-neutral-400 mt-2" id="selected-date-display"></p>
+            </div>
+            <div class="grid grid-cols-3 gap-2" id="time-slots">
+                <!-- 시간 슬롯은 JS로 동적 생성 -->
+            </div>
+        </section>
+
+        <!-- STEP 4: 고객 정보 입력 -->
+        <section id="step-4" class="step-section fade-in">
+            <div class="mb-8">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-[0.2em] mb-2">Step 04</p>
+                <h2 class="text-xl font-black leading-tight">예약자 정보를<br>입력해 주세요.</h2>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1.5">이름 *</label>
+                    <input type="text" id="res-name" placeholder="홍길동" class="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm" oninput="checkStep4()">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1.5">연락처 *</label>
+                    <input type="tel" id="res-phone" placeholder="010-0000-0000" class="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm" oninput="formatPhone(this); checkStep4();" maxlength="13">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1.5">이메일 (선택)</label>
+                    <input type="email" id="res-email" placeholder="example@email.com" class="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm">
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1.5">관심 제품 (복수 선택 가능)</label>
+                    <div class="flex flex-wrap gap-2 mt-1" id="product-chips">
+                        <div class="product-chip rounded-full px-4 py-2 text-xs font-medium" onclick="toggleProduct(this, '파고라')">파고라</div>
+                        <div class="product-chip rounded-full px-4 py-2 text-xs font-medium" onclick="toggleProduct(this, '어닝')">어닝</div>
+                        <div class="product-chip rounded-full px-4 py-2 text-xs font-medium" onclick="toggleProduct(this, '가든룸')">가든룸</div>
+                        <div class="product-chip rounded-full px-4 py-2 text-xs font-medium" onclick="toggleProduct(this, '데크')">데크</div>
+                        <div class="product-chip rounded-full px-4 py-2 text-xs font-medium" onclick="toggleProduct(this, '기타')">기타</div>
+                    </div>
+                </div>
+                <div>
+                    <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1.5">요청사항 (선택)</label>
+                    <textarea id="res-memo" rows="3" placeholder="궁금하신 점이나 요청사항을 자유롭게 작성해 주세요." class="w-full border border-neutral-200 rounded-xl px-4 py-3 text-sm resize-none"></textarea>
+                </div>
+
+                <!-- 개인정보 동의 -->
+                <div class="bg-neutral-50 rounded-xl p-4 space-y-3 mt-4">
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" id="consent-privacy" class="mt-0.5 accent-black" onchange="checkStep4()">
+                        <span class="text-[11px] text-neutral-600">개인정보 수집 이용 및 마케팅 수신에 동의합니다. <span class="text-red-400">(필수)</span></span>
+                    </label>
+                    <label class="flex items-start gap-2 cursor-pointer">
+                        <input type="checkbox" id="consent-third" class="mt-0.5 accent-black" onchange="checkStep4()">
+                        <span class="text-[11px] text-neutral-600">개인정보 제3자 제공에 동의합니다. <span class="text-red-400">(필수)</span></span>
+                    </label>
+                </div>
+            </div>
+        </section>
+
+        <!-- STEP 5: 확인 & 완료 -->
+        <section id="step-5" class="step-section fade-in">
+            <div class="mb-8 text-center">
+                <div class="w-16 h-16 bg-black rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i data-lucide="check" class="w-8 h-8 text-white"></i>
+                </div>
+                <h2 class="text-xl font-black leading-tight">예약 요청이<br>접수되었습니다.</h2>
+                <p class="text-sm text-neutral-400 mt-3">담당자 확인 후 확정 안내를 드리겠습니다.</p>
+            </div>
+
+            <div class="bg-neutral-50 rounded-2xl p-5 space-y-3">
+                <p class="text-[9px] font-black text-neutral-400 uppercase tracking-[0.2em] mb-3">예약 요약</p>
+                <div class="flex justify-between items-center py-1.5 border-b border-neutral-100">
+                    <span class="text-xs text-neutral-400">쇼룸</span>
+                    <span class="text-xs font-bold" id="sum-showroom">-</span>
+                </div>
+                <div class="flex justify-between items-center py-1.5 border-b border-neutral-100">
+                    <span class="text-xs text-neutral-400">날짜</span>
+                    <span class="text-xs font-bold" id="sum-date">-</span>
+                </div>
+                <div class="flex justify-between items-center py-1.5 border-b border-neutral-100">
+                    <span class="text-xs text-neutral-400">시간</span>
+                    <span class="text-xs font-bold" id="sum-time">-</span>
+                </div>
+                <div class="flex justify-between items-center py-1.5 border-b border-neutral-100">
+                    <span class="text-xs text-neutral-400">이름</span>
+                    <span class="text-xs font-bold" id="sum-name">-</span>
+                </div>
+                <div class="flex justify-between items-center py-1.5 border-b border-neutral-100">
+                    <span class="text-xs text-neutral-400">연락처</span>
+                    <span class="text-xs font-bold" id="sum-phone">-</span>
+                </div>
+                <div class="flex justify-between items-center py-1.5">
+                    <span class="text-xs text-neutral-400">관심 제품</span>
+                    <span class="text-xs font-bold" id="sum-products">-</span>
+                </div>
+            </div>
+
+            <div class="mt-6 text-center">
+                <p class="text-[10px] text-neutral-400 leading-relaxed">
+                    입력하신 연락처로 예약 확정 안내가 발송됩니다.<br>
+                    문의사항은 <span class="font-bold text-black">1533-6887</span>로 연락 주세요.
+                </p>
+            </div>
+        </section>
+    </main>
+
+    <!-- 하단 버튼 -->
+    <footer id="bottom-bar" class="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-neutral-100 z-50">
+        <div class="max-w-lg mx-auto px-6 py-4 flex gap-3">
+            <button id="btn-back" class="flex-shrink-0 w-12 h-12 border border-neutral-200 rounded-xl flex items-center justify-center hover:border-black transition-colors" onclick="prevStep()" style="display:none;">
+                <i data-lucide="arrow-left" class="w-4 h-4"></i>
+            </button>
+            <button id="btn-next" class="flex-1 h-12 bg-neutral-200 text-neutral-400 rounded-xl font-black text-xs uppercase tracking-[0.2em] transition-all cursor-not-allowed" onclick="nextStep()" disabled>
+                다음
+            </button>
+        </div>
+    </footer>
+
+    <script>
+        // ========== 상태 ==========
+        let currentStep = 1;
+        const totalSteps = 5;
+        let reservation = {
+            showroom: '',
+            date: '',
+            time: '',
+            name: '',
+            phone: '',
+            email: '',
+            products: [],
+            memo: ''
+        };
+
+        // ========== 쇼룸 선택 (Step 1) ==========
+        function selectShowroom(el, name) {
+            document.querySelectorAll('.showroom-card').forEach(c => c.classList.remove('selected'));
+            el.classList.add('selected');
+            reservation.showroom = name;
+            lucide.createIcons();
+            enableNext(true);
+        }
+
+        // ========== 날짜 관련 (Step 2) ==========
+        function initDatePicker() {
+            const dateInput = document.getElementById('visit-date');
+            const today = new Date();
+            const minDate = new Date(today);
+            minDate.setDate(today.getDate() + 2);
+            const maxDate = new Date(today);
+            maxDate.setDate(today.getDate() + 30);
+
+            dateInput.min = formatDateISO(minDate);
+            dateInput.max = formatDateISO(maxDate);
+            dateInput.value = '';
+        }
+
+        function onDateChange() {
+            const val = document.getElementById('visit-date').value;
+            if (val) {
+                const d = new Date(val);
+                const day = d.getDay();
+                // 일요일(0) 체크
+                if (day === 0) {
+                    alert('일요일은 예약이 불가합니다. 다른 날짜를 선택해 주세요.');
+                    document.getElementById('visit-date').value = '';
+                    enableNext(false);
+                    return;
+                }
+                reservation.date = val;
+                enableNext(true);
+            } else {
+                enableNext(false);
+            }
+        }
+
+        function formatDateISO(d) {
+            return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        }
+
+        function formatDateKR(dateStr) {
+            const d = new Date(dateStr);
+            const days = ['일', '월', '화', '수', '목', '금', '토'];
+            return `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일 (${days[d.getDay()]})`;
+        }
+
+        // ========== 시간 슬롯 (Step 3) ==========
+        function generateTimeSlots() {
+            const container = document.getElementById('time-slots');
+            container.innerHTML = '';
+
+            document.getElementById('selected-date-display').textContent = formatDateKR(reservation.date);
+
+            const d = new Date(reservation.date);
+            const isSaturday = d.getDay() === 6;
+            const slots = isSaturday
+                ? ['10:00', '11:00', '12:00', '13:00', '14:00']
+                : ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+
+            slots.forEach(time => {
+                const div = document.createElement('div');
+                div.className = 'time-slot rounded-xl py-3 text-center text-sm font-medium';
+                div.textContent = time;
+                div.onclick = function() { selectTime(this, time); };
+                container.appendChild(div);
+            });
+        }
+
+        function selectTime(el, time) {
+            document.querySelectorAll('.time-slot').forEach(s => s.classList.remove('selected'));
+            el.classList.add('selected');
+            reservation.time = time;
+            enableNext(true);
+        }
+
+        // ========== 제품 선택 (Step 4) ==========
+        function toggleProduct(el, product) {
+            el.classList.toggle('selected');
+            const idx = reservation.products.indexOf(product);
+            if (idx > -1) reservation.products.splice(idx, 1);
+            else reservation.products.push(product);
+        }
+
+        // ========== 전화번호 포맷 ==========
+        function formatPhone(input) {
+            let value = input.value.replace(/[^0-9]/g, '');
+            let result = '';
+            if (value.length < 4) result = value;
+            else if (value.length < 7) result = value.substr(0, 3) + '-' + value.substr(3);
+            else if (value.length < 11) result = value.substr(0, 3) + '-' + value.substr(3, 3) + '-' + value.substr(6);
+            else result = value.substr(0, 3) + '-' + value.substr(3, 4) + '-' + value.substr(7, 4);
+            input.value = result;
+        }
+
+        // ========== Step 4 검증 ==========
+        function checkStep4() {
+            const name = document.getElementById('res-name').value.trim();
+            const phone = document.getElementById('res-phone').value;
+            const c1 = document.getElementById('consent-privacy').checked;
+            const c2 = document.getElementById('consent-third').checked;
+            enableNext(name && phone.length >= 12 && c1 && c2);
+        }
+
+        // ========== 버튼 상태 ==========
+        function enableNext(flag) {
+            const btn = document.getElementById('btn-next');
+            if (flag) {
+                btn.disabled = false;
+                btn.classList.remove('bg-neutral-200', 'text-neutral-400', 'cursor-not-allowed');
+                btn.classList.add('bg-black', 'text-white', 'hover:bg-neutral-800');
+            } else {
+                btn.disabled = true;
+                btn.classList.add('bg-neutral-200', 'text-neutral-400', 'cursor-not-allowed');
+                btn.classList.remove('bg-black', 'text-white', 'hover:bg-neutral-800');
+            }
+        }
+
+        // ========== 네비게이션 ==========
+        function goToStep(step) {
+            document.querySelectorAll('.step-section').forEach(s => s.classList.remove('active'));
+            document.getElementById('step-' + step).classList.add('active');
+            currentStep = step;
+
+            document.getElementById('current-step-num').textContent = step;
+            document.getElementById('progress-bar').style.width = (step / totalSteps * 100) + '%';
+
+            // 뒤로가기 버튼
+            document.getElementById('btn-back').style.display = step > 1 && step < 5 ? 'flex' : 'none';
+
+            // 버튼 텍스트
+            const btn = document.getElementById('btn-next');
+            if (step === 4) {
+                btn.textContent = '예약 요청';
+            } else if (step === 5) {
+                document.getElementById('bottom-bar').style.display = 'none';
+            } else {
+                btn.textContent = '다음';
+            }
+
+            // 스텝 진입 시 초기화
+            if (step === 2) initDatePicker();
+            if (step === 3) generateTimeSlots();
+
+            // 스크롤 최상단
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // 각 스텝 진입 시 next 비활성 (이미 선택된 값이 있으면 활성)
+            if (step === 1) enableNext(!!reservation.showroom);
+            if (step === 2) enableNext(!!reservation.date);
+            if (step === 3) enableNext(!!reservation.time);
+            if (step === 4) checkStep4();
+        }
+
+        function nextStep() {
+            if (document.getElementById('btn-next').disabled) return;
+
+            if (currentStep === 4) {
+                // 예약 제출
+                submitReservation();
+                return;
+            }
+
+            if (currentStep < totalSteps) {
+                enableNext(false);
+                goToStep(currentStep + 1);
+            }
+        }
+
+        function prevStep() {
+            if (currentStep > 1) {
+                goToStep(currentStep - 1);
+            }
+        }
+
+        // ========== 예약 제출 ==========
+        async function submitReservation() {
+            const btn = document.getElementById('btn-next');
+            btn.disabled = true;
+            btn.textContent = '접수 중...';
+            btn.classList.add('opacity-60');
+
+            reservation.name = document.getElementById('res-name').value.trim();
+            reservation.phone = document.getElementById('res-phone').value;
+            reservation.email = document.getElementById('res-email').value.trim();
+            reservation.memo = document.getElementById('res-memo').value.trim();
+
+            // 1. Firestore — showroom_reservations 컬렉션 저장
+            try {
+                await window.SHOWROOM_DB.collection('showroom_reservations').add({
+                    showroom: reservation.showroom,
+                    date: reservation.date,
+                    time: reservation.time,
+                    name: reservation.name,
+                    phone: reservation.phone,
+                    email: reservation.email,
+                    products: reservation.products.join(', '),
+                    memo: reservation.memo,
+                    status: '예약요청',
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } catch(e) {
+                console.error('예약 저장 오류:', e);
+            }
+
+            // 2. Firestore — crm_customers 컬렉션 저장 (SMR 연동)
+            try {
+                const now = new Date();
+                await window.SHOWROOM_DB.collection('crm_customers').add({
+                    brand: '오스카',
+                    date: now.toISOString().slice(0, 10),
+                    year: now.getFullYear() + '년',
+                    month: (now.getMonth() + 1) + '월',
+                    channel: '쇼룸예약',
+                    consent: '동의',
+                    phone: reservation.phone,
+                    email: reservation.email,
+                    product: reservation.products.length > 0 ? reservation.products.join(',') : '파고라',
+                    custType: '개인',
+                    grade: '',
+                    grade2: '',
+                    province: '',
+                    district: '',
+                    address: '',
+                    assignedBranch: reservation.showroom,
+                    status: '미배정',
+                    content: `[쇼룸예약] 쇼룸: ${reservation.showroom} / 날짜: ${reservation.date} / 시간: ${reservation.time} / 관심제품: ${reservation.products.join(', ')} / 요청: ${reservation.memo || '없음'}`,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } catch(e) {
+                console.error('CRM 저장 오류:', e);
+            }
+
+            // 3. 요약 표시
+            document.getElementById('sum-showroom').textContent = reservation.showroom;
+            document.getElementById('sum-date').textContent = formatDateKR(reservation.date);
+            document.getElementById('sum-time').textContent = reservation.time;
+            document.getElementById('sum-name').textContent = reservation.name;
+            document.getElementById('sum-phone').textContent = reservation.phone;
+            document.getElementById('sum-products').textContent = reservation.products.length > 0 ? reservation.products.join(', ') : '-';
+
+            goToStep(5);
+        }
+
+        // ========== 초기화 ==========
+        document.addEventListener('DOMContentLoaded', function() {
+            lucide.createIcons();
+        });
+    </script>
+</body>
+</html>
