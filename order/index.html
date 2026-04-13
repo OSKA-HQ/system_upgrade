@@ -2629,10 +2629,24 @@
       archivedLoading = true;
       render();
       try {
-        const { db, collection, getDocs } = window.WORKS_DB;
+        const { db, collection, getDocs, doc, updateDoc } = window.WORKS_DB;
         const snap = await getDocs(collection(db, 'crm_customers_archive'));
         archivedCustomers = [];
         snap.forEach(d => archivedCustomers.push({ id: d.id, ...d.data() }));
+
+        // [일회성] OSKA → 오스카 자동 변환 (완료 후 이 블록 제거)
+        const oskaFix = archivedCustomers.filter(c => c.brand === 'OSKA');
+        if (oskaFix.length > 0) {
+          console.log('OSKA→오스카 변환 대상: ' + oskaFix.length + '건');
+          const CHUNK = 20;
+          for (let i = 0; i < oskaFix.length; i += CHUNK) {
+            const slice = oskaFix.slice(i, i + CHUNK);
+            await Promise.all(slice.map(c => updateDoc(doc(db, 'crm_customers_archive', c.id), { brand: '오스카' })));
+          }
+          console.log('OSKA→오스카 변환 완료: ' + oskaFix.length + '건');
+          oskaFix.forEach(c => c.brand = '오스카');
+        }
+
         archivedCustomers.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       } catch(e) {
         console.error('Archive load error:', e);
