@@ -236,8 +236,14 @@
         snapshot.forEach(doc => {
           newCustomers.push({ id: doc.id, ...doc.data() });
         });
-        // no 필드 기준 내림차순 정렬 (no 없는 문서는 맨 뒤로)
-        newCustomers.sort((a, b) => (b.no || 0) - (a.no || 0));
+        // 최신순 정렬: createdAt 타임스탬프 > date 문자열 > no 순
+        newCustomers.sort((a, b) => {
+          const tsA = a.createdAt?.seconds || 0;
+          const tsB = b.createdAt?.seconds || 0;
+          if (tsA !== tsB) return tsB - tsA;
+          if (a.date !== b.date) return (b.date || '').localeCompare(a.date || '');
+          return (b.no || 0) - (a.no || 0);
+        });
         // 데이터 변경 없으면 render 스킵
         if (newCustomers.length === _lastCustomerCount && customers.length > 0) {
           customers = newCustomers;
@@ -2370,14 +2376,17 @@
       }
       if (crmSearch.trim()) {
         const q = crmSearch.trim().toLowerCase();
-        list = list.filter(c =>
-          (c.phone || '').toLowerCase().includes(q) ||
-          (c.content || '').toLowerCase().includes(q) ||
-          (c.address || '').toLowerCase().includes(q) ||
-          (c.province || '').toLowerCase().includes(q) ||
-          (c.district || '').toLowerCase().includes(q) ||
-          (c.email || '').toLowerCase().includes(q)
-        );
+        const qNoHyphen = q.replace(/-/g, '');
+        list = list.filter(c => {
+          const phone = (c.phone || '').toLowerCase();
+          const phoneNoHyphen = phone.replace(/-/g, '');
+          return phone.includes(q) || phoneNoHyphen.includes(qNoHyphen) ||
+            (c.content || '').toLowerCase().includes(q) ||
+            (c.address || '').toLowerCase().includes(q) ||
+            (c.province || '').toLowerCase().includes(q) ||
+            (c.district || '').toLowerCase().includes(q) ||
+            (c.email || '').toLowerCase().includes(q);
+        });
       }
       return list;
     }
