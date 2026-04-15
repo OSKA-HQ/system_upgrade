@@ -179,37 +179,38 @@
     const PROVINCE_NORMALIZE = {
       '서울특별시':'서울', '부산광역시':'부산', '대구광역시':'대구', '인천광역시':'인천',
       '광주광역시':'광주', '대전광역시':'대전', '울산광역시':'울산', '세종특별자치시':'세종',
-      '경기도':'경기', '강원도':'강원', '충청북도':'충북', '충청남도':'충남',
-      '전라북도':'전북', '전라남도':'전남', '경상북도':'경북', '경상남도':'경남',
+      '경기도':'경기', '강원도':'강원', '강원특별자치도':'강원', '충청북도':'충북', '충청남도':'충남',
+      '전라북도':'전북', '전북특별자치도':'전북', '전라남도':'전남', '경상북도':'경북', '경상남도':'경남',
       '제주특별자치도':'제주'
     };
-    const BRANCH_MAP = {
-      '부산': '부산지사', '울산': '부산지사', '대구': '부산지사', '경남': '부산지사', '경북': '부산지사'
-    };
+    // BRANCH_MAP은 initFromURL() 이후 getDynamicBranchMap()으로 동적 생성
+    let BRANCH_MAP = {};
     function getAutoAssignedBranch(province) {
+      if (Object.keys(BRANCH_MAP).length === 0) BRANCH_MAP = getDynamicBranchMap();
       const norm = PROVINCE_NORMALIZE[province] || province;
       return BRANCH_MAP[norm] || '본사';
     }
 
     // 지역 데이터 (시/도, 시/군/구)
     const REGIONS_DATA = {
-      '서울': ['강남구', '강동구', '강북구', '강서구', '관악구', '광진구', '구로구', '금천구', '노원구', '도봉구', '동대문구', '동작구', '마포구', '서대문구', '서초구', '성동구', '성북구', '송파구', '양천구', '영등포구', '용산구', '은평구'],
-      '부산': ['강서구', '금정구', '남구', '북구', '동구', '동래구', '부산진구', '사상구', '사하구', '서구', '수영구', '연제구', '영도구', '중구', '해운대구'],
-      '대구': ['남구', '달서구', '달성군', '동구', '북구', '서구', '수성구', '중구'],
-      '인천': ['강화군', '계양구', '남동구', '남구', '동구', '부평구', '서구', '시흥시', '연수구', '옹진군', '중구'],
-      '광주': ['광산구', '남구', '동구', '북구', '서구'],
-      '대전': ['대덕구', '동구', '서구', '유성구', '중구'],
-      '울산': ['남구', '동구', '북구', '울주군', '중구'],
+      '서울': ['강남구','강동구','강북구','강서구','관악구','광진구','구로구','금천구','노원구','도봉구','동대문구','동작구','마포구','서대문구','서초구','성동구','성북구','송파구','양천구','영등포구','용산구','은평구','종로구','중구','중랑구'],
+      '부산': ['강서구','금정구','기장군','남구','동구','동래구','부산진구','북구','사상구','사하구','서구','수영구','연제구','영도구','중구','해운대구'],
+      '대구': ['군위군','남구','달서구','달성군','동구','북구','서구','수성구','중구'],
+      '인천': ['강화군','계양구','남동구','동구','미추홀구','부평구','서구','연수구','옹진군','중구'],
+      '광주': ['광산구','남구','동구','북구','서구'],
+      '대전': ['대덕구','동구','서구','유성구','중구'],
+      '울산': ['남구','동구','북구','울주군','중구'],
       '세종': ['세종시'],
-      '경기': ['가평군', '고양시', '광명시', '광주시', '구리시', '군포시', '김포시', '남양주시', '동두천시', '부천시', '성남시', '수원시', '시흥시', '안산시', '안성시', '안양시', '여주시', '오산시', '용인시', '의왕시', '의정부시', '이천시', '파주시', '평택시', '포천시', '하남시', '화성시'],
-      '강원': ['강릉시', '고성군', '동해시', '삼척시', '속초시', '양구군', '양양군', '영월군', '인제군', '정선군', '제천시', '철원군', '춘천시', '태백시', '평창군', '홍천군', '화천군', '횡성군'],
-      '충북': ['괴산군', '단양군', '덕산군', '제천시', '진천군', '청주시', '충주시'],
-      '충남': ['계룡시', '공주시', '금산군', '논산시', '당진시', '보령시', '부여군', '서산시', '서천군', '세종시', '아산시', '예산군', '천안시', '청양군', '태안군', '홍성군'],
-      '전북': ['고창군', '군산시', '김제시', '남원시', '무주군', '부안군', '순창군', '전주시', '정읍시', '진안군'],
-      '전남': ['강진군', '고흥군', '고창군', '곡성군', '광양시', '구례군', '나주시', '담양군', '동복군', '목포시', '무안군', '보성군', '봉화군', '순천시', '신안군', '여수시', '영광군', '영암군', '완도군', '장성군', '장흥군', '진도군', '함평군', '해남군', '화순군'],
-      '경북': ['경산시', '경주시', '고령군', '골목군', '김천시', '문경시', '봉화군', '상주시', '성주군', '안동시', '영덕군', '영양군', '영주시', '영천시', '예천군', '울릉군', '울진군', '의성군', '청도군', '청송군', '칠곡군', '포항시'],
-      '경남': ['거제시', '거창군', '고성군', '김해시', '남해군', '마산시', '밀양시', '부산진구', '사천시', '산청군', '진주시', '창녕군', '창원시', '통영시', '하동군', '함안군', '함양군', '합천군'],
-      '제주': ['서귀포시', '제주시'],
+      '경기': ['가평군','고양시','과천시','광명시','광주시','구리시','군포시','김포시','남양주시','동두천시','부천시','성남시','수원시','시흥시','안산시','안성시','안양시','양주시','양평군','여주시','연천군','오산시','용인시','의왕시','의정부시','이천시','파주시','평택시','포천시','하남시','화성시'],
+      '강원': ['강릉시','고성군','동해시','삼척시','속초시','양구군','양양군','영월군','원주시','인제군','정선군','철원군','춘천시','태백시','평창군','홍천군','화천군','횡성군'],
+      '충북': ['괴산군','단양군','보은군','영동군','옥천군','음성군','제천시','증평군','진천군','청주시','충주시'],
+      '충남': ['계룡시','공주시','금산군','논산시','당진시','보령시','부여군','서산시','서천군','아산시','예산군','천안시','청양군','태안군','홍성군'],
+      '전북': ['고창군','군산시','김제시','남원시','무주군','부안군','순창군','완주군','익산시','임실군','장수군','전주시','정읍시','진안군'],
+      '전남': ['강진군','고흥군','곡성군','광양시','구례군','나주시','담양군','목포시','무안군','보성군','순천시','신안군','여수시','영광군','영암군','완도군','장성군','장흥군','진도군','함평군','해남군','화순군'],
+      '경북': ['경산시','경주시','고령군','구미시','김천시','문경시','봉화군','상주시','성주군','안동시','영덕군','영양군','영주시','영천시','예천군','울릉군','울진군','의성군','청도군','청송군','칠곡군','포항시'],
+      '경남': ['거제시','거창군','고성군','김해시','남해군','밀양시','사천시','산청군','양산시','의령군','진주시','창녕군','창원시','통영시','하동군','함안군','함양군','합천군'],
+      '제주': ['서귀포시','제주시'],
+      '해외': ['기타']
     };
 
     // 제품 DB
@@ -243,6 +244,9 @@
     ];
 
     // ===== URL 파라미터 =====
+    let allBranches = {}; // BRANCHES 데이터 (index.html에서 전달)
+    let allManagers = {}; // ACCOUNT_MANAGERS 데이터
+
     function initFromURL() {
       try {
         const params = new URLSearchParams(window.location.search);
@@ -253,7 +257,41 @@
           const allTypes = JSON.parse(typesRaw);
           currentType = allTypes[currentBranch] || '';
         }
+        const managersRaw = params.get('managers');
+        if (managersRaw) allManagers = JSON.parse(managersRaw);
+        const branchesRaw = params.get('branches');
+        if (branchesRaw) allBranches = JSON.parse(branchesRaw);
       } catch(e) { console.log('URL parse error:', e); }
+    }
+
+    // BRANCHES 기반 지사 목록 생성 (select option용)
+    function getBranchOptions() {
+      const opts = ['본사'];
+      Object.entries(allBranches).forEach(([name, data]) => {
+        if (!opts.includes(name)) opts.push(name);
+      });
+      return opts;
+    }
+
+    // BRANCHES 기반 지역→지사 자동배정 매핑 동적 생성
+    function getDynamicBranchMap() {
+      const map = {};
+      Object.entries(allBranches).forEach(([name, data]) => {
+        (data.regions || []).forEach(region => { map[region] = name; });
+      });
+      return map;
+    }
+
+    // 지사 로그인 시 기본 고객 목록 (배정 필터 + 유효 시작일 필터)
+    function getBranchBaseCustomers() {
+      if (currentType === 'hq' || !currentBranch) return customers;
+      let list = customers.filter(c => c.assignedBranch === currentBranch);
+      const branchData = allBranches[currentBranch];
+      if (branchData && branchData.validFrom) {
+        const validDate = new Date(branchData.validFrom);
+        list = list.filter(c => { const d = getCustomerDate(c); return d && d >= validDate; });
+      }
+      return list;
     }
 
     // ===== Firestore 실시간 구독 =====
@@ -275,14 +313,27 @@
       const q = query(ref);
       unsubCustomers = onSnapshot(q, (snapshot) => {
         const newCustomers = [];
-        snapshot.forEach(doc => {
-          const d = { id: doc.id, ...doc.data() };
+        const autoAssignQueue = [];
+        snapshot.forEach(docSnap => {
+          const d = { id: docSnap.id, ...docSnap.data() };
           // 지사 미배정 + 지역 있으면 자동 배정
           if (!d.assignedBranch && d.province) {
-            d.assignedBranch = getAutoAssignedBranch(d.province);
+            const assigned = getAutoAssignedBranch(d.province);
+            if (assigned && assigned !== '본사') {
+              d.assignedBranch = assigned;
+              d.status = '';
+              autoAssignQueue.push({ id: docSnap.id, branch: assigned });
+            }
           }
           newCustomers.push(d);
         });
+        // 자동배정 결과를 Firestore에 비동기 저장
+        if (autoAssignQueue.length > 0 && currentType === 'hq') {
+          const { db: fdb, doc: fDoc, updateDoc: fUpdate } = window.WORKS_DB;
+          autoAssignQueue.forEach(item => {
+            fUpdate(fDoc(fdb, 'crm_customers', item.id), { assignedBranch: item.branch, status: '' }).catch(e => console.log('auto-assign save:', e));
+          });
+        }
         // 최신순 정렬: createdAt 타임스탬프 > date 문자열 > no 순
         newCustomers.sort((a, b) => {
           const tsA = a.createdAt?.seconds || 0;
@@ -579,6 +630,21 @@
               <!-- ===== 3행: CRM | Showroom | VIP ===== -->
 
               <!-- CRM & CDM (본사: 전체, 지사: 배정 고객) -->
+              ${(function() {
+                const base = getBranchBaseCustomers();
+                const now = new Date();
+                // 오늘 기준 1년 윈도우: [now - 1년, now]
+                const todayCutoff = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+                const todayCount = base.filter(c => { const d = getCustomerDate(c); return d && d >= todayCutoff; }).length;
+                // 어제 기준 1년 윈도우: [now - 1년 - 1일, now - 1일]
+                const yesterday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+                const yesterdayCutoff = new Date(yesterday.getFullYear() - 1, yesterday.getMonth(), yesterday.getDate());
+                const yesterdayCount = base.filter(c => { const d = getCustomerDate(c); return d && d >= yesterdayCutoff && d <= yesterday; }).length;
+                const diff = todayCount - yesterdayCount;
+                const diffText = diff > 0 ? '+' + diff : diff === 0 ? '±0' : '' + diff;
+                const diffColor = diff > 0 ? 'text-green-500' : diff < 0 ? 'text-red-500' : 'text-neutral-400';
+                const diffIcon = diff > 0 ? 'trending-up' : diff < 0 ? 'trending-down' : 'minus';
+                return `
               <div class="bg-white border border-neutral-200 rounded-2xl p-6 hover:border-black transition-all cursor-pointer group" onclick="navigate('crm')">
                 <div class="flex items-center justify-between mb-4">
                   <i data-lucide="users" class="w-6 h-6 text-neutral-300 group-hover:text-black transition-colors"></i>
@@ -586,11 +652,21 @@
                 </div>
                 <h3 class="text-lg font-black uppercase tracking-wider mb-2">CRM & CDM</h3>
                 <p class="text-[11px] text-neutral-400 mb-4">${currentType === 'hq' ? '고객 관리' : currentBranch + ' 배정 고객'}</p>
-                <div class="border-t border-neutral-100 pt-4">
-                  <p class="text-[10px] text-neutral-600 font-black">${currentType === 'hq' ? customers.length : customers.filter(c => c.assignedBranch === currentBranch).length}건</p>
-                  <p class="text-[9px] text-neutral-300">${currentType === 'hq' ? '등록된 고객' : '배정된 고객'}</p>
+                <div class="border-t border-neutral-100 pt-4 flex items-center justify-between">
+                  <div>
+                    <p class="text-[10px] text-neutral-600 font-black">${todayCount.toLocaleString()}건</p>
+                    <p class="text-[9px] text-neutral-300">1년간 보유 DB</p>
+                  </div>
+                  <div class="text-right flex items-center gap-1">
+                    <i data-lucide="${diffIcon}" class="w-3 h-3 ${diffColor}"></i>
+                    <div>
+                      <p class="text-[10px] font-black ${diffColor}">${diffText}</p>
+                      <p class="text-[9px] text-neutral-300">일일 증감</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
+              </div>`;
+              })()}
 
               <!-- 쇼룸예약 관리 -->
               <div class="bg-white border border-green-200 rounded-2xl p-6 hover:border-green-400 transition-all cursor-pointer group" onclick="navigate('showroom_mgmt')">
@@ -1111,7 +1187,7 @@
               <div class="text-[9px] font-black text-neutral-300 uppercase tracking-[0.3em] mb-4 flex items-center gap-2">
                 <i data-lucide="file-text" class="w-3.5 h-3.5"></i> 발주 기본 정보
               </div>
-              <div class="grid grid-cols-2 gap-4">
+              <div class="grid grid-cols-3 gap-4">
                 <div>
                   <label class="block text-[9px] font-black text-neutral-300 mb-1.5 uppercase tracking-widest ml-1">발주처</label>
                   <input type="text" id="orderBranch" class="input-base" value="${currentBranch}" ${currentBranch ? 'disabled' : 'placeholder="발주 지사/업체명"'} />
@@ -1121,10 +1197,14 @@
                   <input type="text" id="orderManager" class="input-base" value="${currentManager}" ${currentManager ? 'disabled' : 'placeholder="담당자명"'} />
                 </div>
                 <div>
+                  <label class="block text-[9px] font-black text-neutral-300 mb-1.5 uppercase tracking-widest ml-1">담당자 전화</label>
+                  <input type="text" id="orderManagerPhone" class="input-base" value="${getCurrentManagerPhone()}" ${currentManager ? 'disabled' : 'placeholder="010-0000-0000"'} />
+                </div>
+                <div>
                   <label class="block text-[9px] font-black text-neutral-300 mb-1.5 uppercase tracking-widest ml-1">발주일</label>
                   <input type="date" id="orderDate" class="input-base" />
                 </div>
-                <div>
+                <div class="col-span-2">
                   <label class="block text-[9px] font-black text-neutral-300 mb-1.5 uppercase tracking-widest ml-1">희망 납품일</label>
                   <input type="date" id="deliveryDate" class="input-base" />
                   <p id="deliveryWarning" class="text-[9px] text-red-500 font-black mt-1 hidden">⚠️ 발주희망일이 2주 이내입니다.</p>
@@ -1335,6 +1415,12 @@
       // 로그 목록
       const logs = order.stageLogs || [];
 
+      // 입금상태 배지 스타일 결정
+      const paymentStatus = order.paymentStatus || '미입금';
+      let paymentBadgeClass = 'bg-red-100 text-red-600 border border-red-200';
+      if (paymentStatus === '입금확인') paymentBadgeClass = 'bg-green-100 text-green-600 border border-green-200';
+      else if (paymentStatus === '부분입금') paymentBadgeClass = 'bg-amber-100 text-amber-600 border border-amber-200';
+
       return `
         <div class="border border-neutral-200 rounded-2xl overflow-hidden">
           <!-- 발주 헤더 -->
@@ -1343,6 +1429,7 @@
               <div>
                 <div class="flex items-center gap-2 mb-1">
                   <span class="text-[9px] font-black status-${order.status||'접수'} px-2 py-0.5 rounded-md">${order.status || '접수'}</span>
+                  <span class="text-[9px] font-black ${paymentBadgeClass} px-2 py-0.5 rounded-md">${paymentStatus}</span>
                   <span class="text-xs font-black">${order.siteName || '-'}</span>
                 </div>
                 <p class="text-[10px] text-neutral-400">${order.branch || ''} · ${order.orderNumber || ''}</p>
@@ -1386,6 +1473,17 @@
 
           <!-- 상세 (펼침) -->
           <div id="detail-${order.id}" class="hidden border-t border-neutral-100">
+            ${isHQ ? `
+            <!-- 본사 전용: 입금상태 변경 및 발주서 다운로드 -->
+            <div class="px-5 pt-4 pb-2 bg-purple-50/50 border-b border-purple-100 flex items-center gap-3 flex-wrap">
+              <span class="text-[9px] font-black text-purple-400 uppercase tracking-[0.2em]">입금 관리</span>
+              <select id="paymentStatus-${order.id}" onchange="updatePaymentStatus('${order.id}', this.value)" class="input-base w-32" style="height: 32px; font-size: 10px;">
+                <option value="미입금" ${paymentStatus === '미입금' ? 'selected' : ''}>미입금</option>
+                <option value="부분입금" ${paymentStatus === '부분입금' ? 'selected' : ''}>부분입금</option>
+                <option value="입금확인" ${paymentStatus === '입금확인' ? 'selected' : ''}>입금확인</option>
+              </select>
+            </div>
+            ` : ''}
             ${isHQ && order.orderType === 'product' ? `
             <!-- 본사 전용: 발주서 다운로드 -->
             <div class="px-5 pt-4 pb-2 bg-blue-50/50 border-b border-blue-100 flex items-center gap-3 flex-wrap">
@@ -1690,6 +1788,15 @@
       return `${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}`;
     }
 
+    // ===== 담당자 전화번호 조회 =====
+    function getCurrentManagerPhone() {
+      if (!currentBranch || !currentManager) return '';
+      const branchData = allBranches[currentBranch];
+      if (!branchData || !branchData.staff) return '';
+      const staffMember = branchData.staff.find(s => s.name === currentManager);
+      return staffMember?.phone || '';
+    }
+
     // ===== 발주 데이터 수집 =====
     function collectOrderData() {
       const province = document.getElementById('siteProvince')?.value || '';
@@ -1701,6 +1808,7 @@
         orderNumber: document.getElementById('orderNumber')?.textContent.replace('발주번호: ','') || '',
         branch: document.getElementById('orderBranch')?.value.trim() || '',
         manager: document.getElementById('orderManager')?.value.trim() || '',
+        managerPhone: document.getElementById('orderManagerPhone')?.value.trim() || '',
         orderDate: document.getElementById('orderDate')?.value || '',
         deliveryDate: document.getElementById('deliveryDate')?.value || '',
         siteName: document.getElementById('siteName')?.value.trim() || '',
@@ -1726,7 +1834,23 @@
     // ===== 미리보기 =====
     // ===== CRM & CDM 페이지 =====
     const CRM_CHANNELS = ['유튜브','홈페이지','전화','카카오톡','블로그','메일','폼','인스타그램','네이버 카페','문자','박람회','스마트스토어','네이버 톡톡','방문','기타'];
-    const CRM_PRODUCTS = ['파고라','데크','폴딩도어','시스템셔터','슬라이딩도어','스크린','방충망','글라스폴딩','스마트픽스글라스','난간','클라비아','가구','짚스크린','유리난간','글라스트','스톤모어','기타'];
+    // 고객유입: 최초 문의/접촉 채널 | 고객고도화: 고객이 브랜드를 알아가는 과정
+    const CHANNEL_TYPE = {
+      '유입': ['도슨트투어','자동견적','전화','홈페이지','메일','블로그','카카오톡','유튜브','인스타그램','네이버 카페','문자','박람회','스마트스토어','네이버 톡톡','폼','방문','기타'],
+      '고도화': ['스마트견적','쇼룸','현장방문요청','견적서 송부','스마트로그']
+    };
+    function getChannelType(channel) {
+      if (CHANNEL_TYPE['고도화'].includes(channel)) return '고도화';
+      return '유입';
+    }
+    const CRM_PRODUCTS = ['파고라','데크','폴딩도어','슬라이딩도어','글라스도어','글라스폴딩','스크린','난간','유리난간','시스템셔터','방충망','스마트픽스글라스','클라비아','스톤모어','짚스크린','플로어','플렉스월','글라스월','가구','기타'];
+    const PRODUCT_CATEGORIES = [
+      { label: "파고라", items: ["STAY (수동)", "STAY (전동)", "Tone & Tone (수동)", "Tone & Tone (전동)", "AIREA", "OPERA", "ATHENA"] },
+      { label: "솔라", items: ["AIREA Solar", "OPERA Solar", "Solar Panel", "Solar Inverter"] },
+      { label: "글라스", items: ["Glass Sliding", "Glass Folding", "Basic Folding (일반)", "Basic Folding (단열)", "Fix Glass (일반)", "Fix Glass (단열)", "Glass Door (외도어)"] },
+      { label: "월사이딩", items: ["LYRA Lepte", "LYRA Treis", "LYRA Treis LED"] },
+      { label: "데크", items: ["Stone Deck (일반)", "Stone Deck (각관)"] }
+    ];
     const CRM_GRADES = ['S','A','B','C','D'];
     const CRM_GRADE_COLORS = { 'S': 'bg-purple-100 text-purple-700 border-purple-200', 'A': 'bg-green-100 text-green-700 border-green-200', 'B': 'bg-blue-100 text-blue-700 border-blue-200', 'C': 'bg-amber-50 text-amber-700 border-amber-200', 'D': 'bg-neutral-100 text-neutral-500 border-neutral-200' };
     let editingCustomerId = null;
@@ -1865,7 +1989,7 @@
       // ── 모드별 날짜 범위 ──
       const range = getDashDateRange();
       // 지사 로그인: 배정 고객만 대상
-      const branchBase = (currentType !== 'hq' && currentBranch) ? customers.filter(c => c.assignedBranch === currentBranch) : customers;
+      const branchBase = getBranchBaseCustomers();
       const allData = dashBrand !== '전체' ? branchBase.filter(c => c.brand === dashBrand) : [...branchBase];
       const data = filterByDateRange(allData, range.from, range.to);
       const total = data.length;
@@ -2086,13 +2210,28 @@
                 <p class="text-[9px] text-neutral-400 font-bold">${range.label}</p>
               </div>
 
-              <!-- 전체 요약 -->
-              <div class="grid grid-cols-4 gap-3 mb-4">
+              <!-- 전체 요약 (고객유입 vs 고객고도화) -->
+              ${(function() {
+                const inflowCount = data.filter(c => getChannelType(c.channel) === '유입').length;
+                const advCount = data.filter(c => getChannelType(c.channel) === '고도화').length;
+                return `
+              <div class="grid grid-cols-5 gap-3 mb-4">
                 <div class="bg-white rounded-xl p-4 text-center">
-                  <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">신규 문의</p>
+                  <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">전체 DB</p>
                   <p class="text-2xl font-black">${total}</p>
                   ${diffHtml}
                 </div>
+                <div class="bg-white rounded-xl p-4 text-center border-l-4 border-blue-400">
+                  <p class="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-1">고객 유입</p>
+                  <p class="text-2xl font-black text-blue-600">${inflowCount}</p>
+                  <p class="text-[9px] text-neutral-400 mt-1">문의/접촉</p>
+                </div>
+                <div class="bg-white rounded-xl p-4 text-center border-l-4 border-purple-400">
+                  <p class="text-[9px] font-black text-purple-500 uppercase tracking-widest mb-1">고객 고도화</p>
+                  <p class="text-2xl font-black text-purple-600">${advCount}</p>
+                  <p class="text-[9px] text-neutral-400 mt-1">견적/방문/쇼룸</p>
+                </div>`;
+              })()}
                 <div class="bg-white rounded-xl p-4 text-center">
                   <p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-1">전환 (지사배정)</p>
                   <p class="text-2xl font-black text-green-600">${totalConverted}</p>
@@ -2291,7 +2430,7 @@
 
     function renderCRM() {
       // 지사 로그인 시 기본 목록을 지사 배정 고객으로 제한
-      const baseCustomers = (currentType !== 'hq' && currentBranch) ? customers.filter(c => c.assignedBranch === currentBranch) : customers;
+      const baseCustomers = getBranchBaseCustomers();
 
       // 전화번호별 문의 횟수 맵 (표시 대상 데이터 기준)
       const phoneCountMap = {};
@@ -2326,10 +2465,21 @@
       CRM_GRADES.forEach(g => { counts[g] = baseCustomers.filter(c => c.grade2 === g).length; });
       counts['-'] = baseCustomers.filter(c => !CRM_GRADES.includes(c.grade2)).length;
 
+      // 일일 증감 (1년 롤링 윈도우)
+      const _now = new Date();
+      const _todayCutoff = new Date(_now.getFullYear() - 1, _now.getMonth(), _now.getDate());
+      const _todayDBCount = baseCustomers.filter(c => { const d = getCustomerDate(c); return d && d >= _todayCutoff; }).length;
+      const _yesterday = new Date(_now.getFullYear(), _now.getMonth(), _now.getDate() - 1);
+      const _yesterdayCutoff = new Date(_yesterday.getFullYear() - 1, _yesterday.getMonth(), _yesterday.getDate());
+      const _yesterdayDBCount = baseCustomers.filter(c => { const d = getCustomerDate(c); return d && d >= _yesterdayCutoff && d <= _yesterday; }).length;
+      const _crmDiff = _todayDBCount - _yesterdayDBCount;
+      const _crmDiffText = _crmDiff > 0 ? '+' + _crmDiff : _crmDiff === 0 ? '±0' : '' + _crmDiff;
+      const _crmDiffColor = _crmDiff > 0 ? 'text-green-500' : _crmDiff < 0 ? 'text-red-500' : 'text-neutral-400';
+
       return `
         <div class="min-h-screen bg-white animate-fade-in">
           ${renderNav()}
-          <main class="pt-20 pb-20 max-w-6xl mx-auto px-6">
+          <main class="pt-20 pb-20 max-w-[1400px] mx-auto px-6">
 
             <div class="flex items-center justify-between mb-8">
               <div>
@@ -2350,6 +2500,12 @@
                 </button>`}
                 <button onclick="navigate('dashboard')" class="h-10 px-5 bg-white border border-neutral-200 rounded-xl text-[10px] font-black uppercase tracking-widest hover:border-black active:scale-[0.98] transition-all flex items-center gap-2">
                   <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i> 대시보드
+                </button>
+                <button onclick="navigate('schedule')" class="h-10 px-5 bg-white border border-purple-200 rounded-xl text-[10px] font-black text-purple-600 uppercase tracking-widest hover:border-purple-400 active:scale-[0.98] transition-all flex items-center gap-2">
+                  <i data-lucide="calendar" class="w-3.5 h-3.5"></i> 주요일정
+                </button>
+                <button onclick="openSiteVisitForm()" class="h-10 px-5 bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 active:scale-[0.98] transition-all flex items-center gap-2">
+                  <i data-lucide="map-pin" class="w-3.5 h-3.5"></i> + 현장방문
                 </button>
                 <button onclick="toggleCRMForm()" class="h-10 px-5 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800 active:scale-[0.98] transition-all flex items-center gap-2">
                   <i data-lucide="plus" class="w-3.5 h-3.5"></i> 신규 등록
@@ -2417,7 +2573,7 @@
               <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
                 <div>
                   <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">전화번호</label>
-                  <input type="tel" id="crmPhone" class="input-base mt-1" placeholder="010-0000-0000" oninput="formatCRMPhone(this); checkDuplicatePhone(this.value);" maxlength="13" />
+                  <input type="tel" id="crmPhone" class="input-base mt-1" placeholder="010-0000-0000" oninput="formatCRMPhone(this); checkDuplicatePhone(this.value);" />
                   <div id="phone-duplicate-warning" class="mt-1 hidden"></div>
                 </div>
                 <div>
@@ -2462,27 +2618,28 @@
                   <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1">지사 배정</label>
                   <select id="crmAssignedBranch" class="input-base mt-1">
                     <option value="">미배정</option>
-                    <option value="본사">본사</option>
-                    <option value="현방">현방</option>
-                    <option value="강남지사">강남지사</option>
-                    <option value="강동지사">강동지사</option>
-                    <option value="강북지사">강북지사</option>
-                    <option value="부산지사">부산지사</option>
-                    <option value="호남제주지사">호남제주지사</option>
-                    <option value="중부지사">중부지사</option>
+                    ${getBranchOptions().map(b => `<option value="${b}">${b}</option>`).join('')}
                   </select>
                 </div>
               </div>
-              <!-- 제품군 (체크박스 복수 선택) -->
+              <!-- 제품군 (카테고리별 아코디언) -->
               <div class="mb-4">
-                <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1 mb-2 block">제품군 (복수 선택 가능)</label>
-                <div class="flex flex-wrap gap-2">
-                  ${CRM_PRODUCTS.map(p => `
-                  <label class="flex items-center gap-1.5 px-3 py-2 border border-neutral-200 rounded-lg hover:border-black transition-all cursor-pointer has-[:checked]:bg-black has-[:checked]:text-white has-[:checked]:border-black">
-                    <input type="checkbox" name="crmProductCheck" value="${p}" class="w-3 h-3 accent-black" />
-                    <span class="text-[11px] font-bold">${p}</span>
-                  </label>
-                  `).join('')}
+                <label class="text-[9px] font-black text-neutral-300 uppercase tracking-widest ml-1 mb-2 block">제품군 (카테고리 선택 후 제품 선택)</label>
+                <div class="space-y-2">
+                  ${PRODUCT_CATEGORIES.map(cat => `
+                  <div class="border border-neutral-200 rounded-xl overflow-hidden">
+                    <div class="flex items-center gap-2 px-3 py-2.5 bg-neutral-50 cursor-pointer hover:bg-neutral-100 transition-colors" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                      <i data-lucide="chevron-right" class="w-3 h-3 text-neutral-400"></i>
+                      <span class="text-[11px] font-black text-neutral-600">${cat.label}</span>
+                    </div>
+                    <div class="hidden px-3 py-2 space-y-1.5 bg-white">
+                      ${cat.items.map(item => `
+                      <label class="flex items-center gap-2 cursor-pointer py-1">
+                        <input type="checkbox" name="crmProductCheck" value="${cat.label} > ${item}" class="w-3 h-3 accent-black" />
+                        <span class="text-[10px] font-bold text-neutral-600">${item}</span>
+                      </label>`).join('')}
+                    </div>
+                  </div>`).join('')}
                 </div>
               </div>
               <div class="mb-4">
@@ -2502,7 +2659,10 @@
                   ${g !== '전체' ? `<div class="w-2 h-2 rounded-full ${crmFilter === g ? 'bg-white' : CRM_GRADE_DOT[g]}"></div>` : ''}
                   <span class="text-[9px] font-black uppercase tracking-widest ${crmFilter === g ? 'text-white/70' : 'text-neutral-400'}">${g === '-' ? '미지정' : g}</span>
                 </div>
-                <div class="text-2xl font-black">${counts[g] || 0}</div>
+                <div class="flex items-center gap-2">
+                  <span class="text-2xl font-black">${counts[g] || 0}</span>
+                  ${g === '전체' ? `<span class="text-[10px] font-black ${crmFilter === g ? (_crmDiff > 0 ? 'text-green-300' : _crmDiff < 0 ? 'text-red-300' : 'text-white/50') : _crmDiffColor}">${_crmDiffText}</span>` : ''}
+                </div>
               </button>
               `).join('')}
             </div>
@@ -2537,8 +2697,9 @@
                     <tr class="bg-neutral-50 border-b border-neutral-200">
                       ${[
                         {key:'no', label:'No', cls:'w-10'},
-                        {key:'brand', label:'구분', cls:''},
+                        {key:'brand', label:'브랜드', cls:''},
                         {key:'date', label:'날짜', cls:''},
+                        {key:'channelType', label:'구분', cls:''},
                         {key:'channel', label:'채널', cls:''},
                         {key:'phone', label:'전화번호', cls:''},
                         {key:'product', label:'제품', cls:''},
@@ -2565,12 +2726,13 @@
                       // pCount: 동일 전화번호 문의 횟수 (중복 문의 뱃지에 사용)
                       return `
                     <tr class="border-b border-neutral-100 hover:bg-neutral-50 transition-colors">
-                      <td class="px-3 py-3 text-neutral-400 font-bold">${c.no || '-'}</td>
+                      <td class="px-3 py-3 text-neutral-400 font-bold flex items-center gap-1">${c.no || '-'}${c.projectGroup ? '<span class="text-green-600 font-bold text-sm" title="프로젝트 통합됨">🔗</span>' : ''}</td>
                       <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${c.brand === '테라까사' ? 'bg-orange-50 text-orange-600' : 'bg-neutral-100 text-neutral-600'}">${c.brand || '-'}</span></td>
+                      <td class="px-3 py-3"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${getChannelType(c.channel) === '고도화' ? 'bg-purple-50 text-purple-600 border border-purple-200' : 'bg-blue-50 text-blue-600 border border-blue-200'}">${getChannelType(c.channel)}</span></td>
                       <td class="px-3 py-3 text-neutral-600 font-bold">${c.date || '-'}</td>
                       <td class="px-3 py-3 font-bold">${c.channel || '-'}</td>
                       <td class="px-3 py-3 font-bold">${c.phone || '-'}</td>
-                      <td class="px-3 py-3 font-bold">${c.product || '-'}</td>
+                      <td class="px-3 py-3 font-bold text-[9px] leading-relaxed">${c.product ? [...new Set(c.product.split(',').map(p => { const trimmed = p.trim(); return trimmed.includes('>') ? trimmed.split('>')[0].trim() : trimmed; }).filter(Boolean))].join('<br>') : '-'}</td>
                       <td class="px-3 py-3 font-bold">${c.custType || '-'}</td>
                       <td class="px-3 py-3"><span class="text-[9px] font-black px-2 py-0.5 rounded border ${gradeClass}">${displayGrade}</span></td>
                       <td class="px-3 py-3 text-neutral-500 max-w-[200px] truncate hidden md:table-cell">${c.content || '-'}</td>
@@ -2636,19 +2798,6 @@
         const snap = await getDocs(collection(db, 'crm_customers_archive'));
         archivedCustomers = [];
         snap.forEach(d => archivedCustomers.push({ id: d.id, ...d.data() }));
-
-        // [일회성] OSKA → 오스카 자동 변환 (완료 후 이 블록 제거)
-        const oskaFix = archivedCustomers.filter(c => c.brand === 'OSKA');
-        if (oskaFix.length > 0) {
-          console.log('OSKA→오스카 변환 대상: ' + oskaFix.length + '건');
-          const CHUNK = 20;
-          for (let i = 0; i < oskaFix.length; i += CHUNK) {
-            const slice = oskaFix.slice(i, i + CHUNK);
-            await Promise.all(slice.map(c => updateDoc(doc(db, 'crm_customers_archive', c.id), { brand: '오스카' })));
-          }
-          console.log('OSKA→오스카 변환 완료: ' + oskaFix.length + '건');
-          oskaFix.forEach(c => c.brand = '오스카');
-        }
 
         archivedCustomers.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
       } catch(e) {
@@ -2743,7 +2892,7 @@
           '<td class="px-3 py-3 text-neutral-600 font-bold">' + (c.date || '-') + '</td>' +
           '<td class="px-3 py-3 font-bold">' + (c.channel || '-') + '</td>' +
           '<td class="px-3 py-3 font-bold">' + (c.phone || '-') + '</td>' +
-          '<td class="px-3 py-3 font-bold">' + (c.product || '-') + '</td>' +
+          '<td class="px-3 py-3 font-bold text-[9px] leading-relaxed">' + (c.product ? c.product.split(',').map(function(p){return p.trim()}).filter(Boolean).join('<br>') : '-') + '</td>' +
           '<td class="px-3 py-3 font-bold">' + (c.custType || '-') + '</td>' +
           '<td class="px-3 py-3"><span class="text-[9px] font-black px-2 py-0.5 rounded border ' + gradeClass + '">' + displayGrade + '</span></td>' +
           '<td class="px-3 py-3 text-neutral-500 max-w-[200px] truncate hidden md:table-cell">' + (c.content || '-') + '</td>' +
@@ -2877,11 +3026,7 @@
     }
 
     function getFilteredCustomers() {
-      let list = [...customers];
-      // 지사/대리점 로그인: 자기 지사 배정 고객만 표시
-      if (currentType !== 'hq' && currentBranch) {
-        list = list.filter(c => c.assignedBranch === currentBranch);
-      }
+      let list = [...getBranchBaseCustomers()];
       if (crmFilter === '-') list = list.filter(c => !CRM_GRADES.includes(c.grade2));
       else if (crmFilter !== '전체') list = list.filter(c => c.grade2 === crmFilter);
       if (crmBrandFilter !== '전체') list = list.filter(c => c.brand === crmBrandFilter);
@@ -2954,6 +3099,127 @@
       render();
     }
 
+    // ===== 현장방문 일정 등록 =====
+    function openSiteVisitForm() {
+      const panel = document.createElement('div');
+      panel.id = 'siteVisitPanel';
+      panel.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm';
+      const today = new Date().toISOString().slice(0, 10);
+      // 10분 단위 시간 옵션 생성
+      let timeOpts = '';
+      for (let h = 8; h <= 19; h++) {
+        for (let m = 0; m < 60; m += 10) {
+          const hh = String(h).padStart(2, '0');
+          const mm = String(m).padStart(2, '0');
+          const selected = (h === 10 && m === 0) ? 'selected' : '';
+          timeOpts += '<option value="' + hh + ':' + mm + '" ' + selected + '>' + hh + ':' + mm + '</option>';
+        }
+      }
+      const provinceOpts = Object.keys(REGIONS_DATA).map(p => '<option value="' + p + '">' + p + '</option>').join('');
+      panel.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+          <div class="flex items-center justify-between mb-2">
+            <h3 class="text-sm font-black flex items-center gap-2">
+              <i data-lucide="map-pin" class="w-4 h-4 text-blue-500"></i> 현장방문 일정 등록
+            </h3>
+            <button onclick="document.getElementById('siteVisitPanel').remove()" class="text-neutral-400 hover:text-black">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">방문일 <span class="text-red-400">*</span></label>
+              <input type="date" id="visitDate" class="input-base mt-1 w-full" value="${today}" />
+            </div>
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">시간</label>
+              <select id="visitTime" class="input-base mt-1 w-full">${timeOpts}</select>
+            </div>
+          </div>
+          <div>
+            <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">전화번호 <span class="text-red-400">*</span></label>
+            <input type="tel" id="visitPhone" class="input-base mt-1 w-full" placeholder="010-0000-0000" oninput="formatCRMPhone(this)" />
+          </div>
+          <div>
+            <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">고객명 / 현장명 <span class="text-neutral-300">(선택)</span></label>
+            <input type="text" id="visitCustomer" class="input-base mt-1 w-full" placeholder="예: 김철수 / 강남 OO아파트" />
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">시/도</label>
+              <select id="visitProvince" class="input-base mt-1 w-full" onchange="updateVisitDistrict()">
+                <option value="">선택</option>
+                ${provinceOpts}
+              </select>
+            </div>
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">시/군/구</label>
+              <select id="visitDistrict" class="input-base mt-1 w-full">
+                <option value="">먼저 시/도 선택</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">상세주소</label>
+            <input type="text" id="visitAddress" class="input-base mt-1 w-full" placeholder="건물명, 호수 등" />
+          </div>
+          <div>
+            <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">메모</label>
+            <textarea id="visitMemo" class="input-base mt-1 w-full" rows="2" placeholder="참고사항"></textarea>
+          </div>
+          <button onclick="submitSiteVisit()" class="w-full h-11 bg-blue-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-blue-600 active:scale-[0.98] transition-all flex items-center justify-center gap-2">
+            <i data-lucide="check" class="w-3.5 h-3.5"></i> 일정 등록
+          </button>
+        </div>
+      `;
+      document.body.appendChild(panel);
+      lucide.createIcons();
+    }
+
+    function updateVisitDistrict() {
+      const province = document.getElementById('visitProvince').value;
+      const districtSel = document.getElementById('visitDistrict');
+      const districts = REGIONS_DATA[province] || [];
+      districtSel.innerHTML = '<option value="">선택</option>' + districts.map(d => '<option value="' + d + '">' + d + '</option>').join('');
+    }
+
+    async function submitSiteVisit() {
+      const date = document.getElementById('visitDate').value;
+      const time = document.getElementById('visitTime').value;
+      const phone = document.getElementById('visitPhone').value.trim();
+      const customer = document.getElementById('visitCustomer').value.trim();
+      const province = document.getElementById('visitProvince').value;
+      const district = document.getElementById('visitDistrict').value;
+      const address = document.getElementById('visitAddress').value.trim();
+      const memo = document.getElementById('visitMemo').value.trim();
+      if (!date || !phone) { alert('방문일과 전화번호를 입력하세요.'); return; }
+
+      try {
+        const { db, collection, addDoc, serverTimestamp } = window.WORKS_DB;
+        const fullAddress = [province, district, address].filter(Boolean).join(' ');
+        await addDoc(collection(db, 'works_schedules'), {
+          type: 'site_visit',
+          title: `[현장방문] ${customer || phone}`,
+          date: date,
+          time: time || '',
+          phone: phone,
+          customer: customer,
+          province: province,
+          district: district,
+          address: fullAddress,
+          memo: memo,
+          branch: currentBranch || '본사',
+          manager: currentManager || '',
+          createdAt: serverTimestamp()
+        });
+        alert('✅ 현장방문 일정이 등록되었습니다.');
+        document.getElementById('siteVisitPanel').remove();
+      } catch(e) {
+        console.error('Site visit save error:', e);
+        alert('저장 실패: ' + e.message);
+      }
+    }
+
     function toggleCRMForm() {
       const area = document.getElementById('crmFormArea');
       if (area) {
@@ -2980,6 +3246,7 @@
 
     function formatCRMPhone(input) {
       let value = input.value.replace(/[^0-9]/g, '');
+      if (value.length > 11) value = value.substr(0, 11);
       let result = '';
       if (value.length < 4) {
         result = value;
@@ -3834,6 +4101,34 @@
         return db2.localeCompare(da);
       });
       if (records.length === 0) { alert('고객 정보를 찾을 수 없습니다.'); return; }
+
+      let primaryRecord = records[0];
+      const projectGroup = primaryRecord.projectGroup || '';
+      const projectName = primaryRecord.projectName || '';
+
+      // 프로젝트 그룹이 있으면 같은 그룹의 다른 고객들도 함께 검색
+      if (projectGroup) {
+        const linkedRecords = customers.filter(c => c.projectGroup === projectGroup && c.id !== primaryRecord.id);
+        const linkedArchiveRecords = [];
+        try {
+          const { db, collection, getDocs } = window.WORKS_DB;
+          if (db) {
+            const archiveSnap = await getDocs(collection(db, 'crm_customers_archive'));
+            archiveSnap.forEach(doc => {
+              const d = doc.data();
+              if (d.projectGroup === projectGroup && d.id !== primaryRecord.id) {
+                linkedArchiveRecords.push({ ...d, id: doc.id, _archived: true });
+              }
+            });
+          }
+        } catch (e) { console.log('아카이브 프로젝트 그룹 조회:', e); }
+        records = [...records, ...linkedRecords, ...linkedArchiveRecords];
+        records.sort((a, b) => {
+          const da = a.date || ''; const db2 = b.date || '';
+          return db2.localeCompare(da);
+        });
+      }
+
       const rep = records[0];
       const totalInquiries = records.length;
       const products = [...new Set(records.flatMap(r => (r.product || '').split(',').map(p => p.trim()).filter(Boolean)))];
@@ -3850,20 +4145,28 @@
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
           <!-- 헤더 -->
           <div class="flex items-center justify-between p-5 border-b border-neutral-100">
-            <div class="flex items-center gap-3">
+            <div class="flex items-center gap-3 flex-1">
               <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center">
                 <i data-lucide="user" class="w-5 h-5 text-blue-500"></i>
               </div>
-              <div>
+              <div class="flex-1">
                 <h3 class="text-sm font-black flex items-center gap-2">고객 관리
                   <span class="text-[9px] font-black px-2 py-0.5 rounded border ${gradeClass}">${latestGrade}</span>
                 </h3>
                 <p class="text-[10px] text-neutral-400 mt-0.5">${hasPhone ? phone : '전화번호 없음'}</p>
+                ${projectGroup ? `<p class="text-[9px] font-bold text-green-600 mt-1">연결됨: ${projectName || '(이름 미지정)'}</p>` : ''}
               </div>
             </div>
-            <button onclick="closeCustomerHistory()" class="text-neutral-400 hover:text-black transition-colors">
-              <i data-lucide="x" class="w-4 h-4"></i>
-            </button>
+            <div class="flex items-center gap-2">
+              ${projectGroup ? `
+              <button onclick="unlinkProject('${primaryRecord.id}')" class="px-3 py-1.5 bg-neutral-100 text-neutral-600 rounded-lg text-[9px] font-black hover:bg-neutral-200 transition-colors">연결 해제</button>
+              ` : `
+              <button onclick="openProjectLink('${hasPhone ? phone : ''}')" class="px-3 py-1.5 bg-black text-white rounded-lg text-[9px] font-black hover:bg-neutral-800 transition-colors">프로젝트 통합</button>
+              `}
+              <button onclick="closeCustomerHistory()" class="text-neutral-400 hover:text-black transition-colors">
+                <i data-lucide="x" class="w-4 h-4"></i>
+              </button>
+            </div>
           </div>
 
           <!-- 고객 요약 -->
@@ -3907,6 +4210,8 @@
                 const rGradeClass = CRM_GRADE_COLORS[rGrade] || 'bg-neutral-50 text-neutral-400 border-neutral-200';
                 const rDot = CRM_GRADE_DOT[rGrade] || 'bg-neutral-300';
                 const isLast = idx === records.length - 1;
+                const isLinkedRecord = projectGroup && r.phone && r.phone.replace(/[^0-9]/g, '') !== phoneNorm;
+                const phoneDisplay = isLinkedRecord ? `[${r.phone}] ` : '';
                 return `
               <div class="flex gap-3 ${!isLast ? 'pb-4' : ''}">
                 <div class="flex flex-col items-center">
@@ -3916,7 +4221,7 @@
                 <div class="flex-1 min-w-0 ${!isLast ? 'border-b border-neutral-50 pb-4' : ''}">
                   <div class="flex items-center justify-between gap-2">
                     <div class="flex items-center gap-2">
-                      <span class="text-[10px] font-black text-neutral-800">${r.date || '-'}</span>
+                      <span class="text-[10px] font-black text-neutral-800">${phoneDisplay}${r.date || '-'}</span>
                       <span class="text-[9px] font-black px-1.5 py-0.5 rounded border ${rGradeClass}">${rGrade}</span>
                       <span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full ${r.brand === '테라까사' ? 'bg-orange-50 text-orange-600' : 'bg-neutral-100 text-neutral-600'}">${r.brand || '-'}</span>
                     </div>
@@ -3943,6 +4248,125 @@
       if (panel) panel.remove();
     }
 
+    // ===== 프로젝트 통합 기능 =====
+    function openProjectLink(phone) {
+      const modal = document.createElement('div');
+      modal.id = 'projectLinkModal';
+      modal.className = 'fixed inset-0 z-[110] flex items-center justify-center bg-black/30 backdrop-blur-sm';
+      modal.innerHTML = `
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
+          <div class="flex items-center justify-between p-5 border-b border-neutral-100">
+            <h3 class="text-sm font-black">프로젝트 통합</h3>
+            <button onclick="closeProjectLink()" class="text-neutral-400 hover:text-black transition-colors">
+              <i data-lucide="x" class="w-4 h-4"></i>
+            </button>
+          </div>
+          <div class="p-5 space-y-4">
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">전화번호 (쉼표 또는 줄바꿈)</label>
+              <textarea id="projectPhones" class="input-base w-full h-24" placeholder="010-0000-0000&#10;010-1111-1111">${phone}</textarea>
+              <p class="text-[8px] text-neutral-300 mt-1">여러 전화번호를 입력하면 같은 프로젝트로 통합됩니다</p>
+            </div>
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-1">프로젝트명 (선택사항)</label>
+              <input type="text" id="projectName" class="input-base w-full" placeholder="예: 강남 OO아파트" />
+            </div>
+            <div class="flex gap-2 pt-2">
+              <button onclick="saveProjectLink()" class="flex-1 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800 transition-colors py-3">
+                통합
+              </button>
+              <button onclick="closeProjectLink()" class="flex-1 bg-neutral-100 text-neutral-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-200 transition-colors py-3">
+                취소
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      lucide.createIcons();
+    }
+
+    function closeProjectLink() {
+      const modal = document.getElementById('projectLinkModal');
+      if (modal) modal.remove();
+    }
+
+    async function saveProjectLink() {
+      const phonesInput = document.getElementById('projectPhones').value.trim();
+      const projectName = document.getElementById('projectName').value.trim();
+
+      if (!phonesInput) {
+        alert('전화번호를 입력하세요.');
+        return;
+      }
+
+      // 전화번호 파싱 (쉼표 또는 줄바꿈으로 구분)
+      const phoneList = phonesInput.split(/[\n,]/g).map(p => p.trim()).filter(p => p && p !== '-');
+
+      if (phoneList.length === 0) {
+        alert('유효한 전화번호가 없습니다.');
+        return;
+      }
+
+      // 고유 그룹 ID 생성
+      const groupId = 'PG_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
+
+      // Firestore에서 고객 찾기 및 업데이트
+      const { db, doc, updateDoc } = window.WORKS_DB;
+      if (!db) {
+        alert('Firebase 연결 오류');
+        return;
+      }
+
+      let updatedCount = 0;
+      let foundPhones = [];
+
+      for (const phone of phoneList) {
+        const phoneNorm = phone.replace(/[^0-9]/g, '');
+        const matchingCustomers = customers.filter(c => c.phone && c.phone.replace(/[^0-9]/g, '') === phoneNorm);
+
+        for (const customer of matchingCustomers) {
+          try {
+            await updateDoc(doc(db, 'crm_customers', customer.id), {
+              projectGroup: groupId,
+              projectName: projectName
+            });
+            updatedCount++;
+            if (!foundPhones.includes(phone)) foundPhones.push(phone);
+          } catch (e) {
+            console.error('프로젝트 업데이트 실패:', e);
+          }
+        }
+      }
+
+      closeProjectLink();
+      alert(`${updatedCount}건의 고객이 프로젝트로 통합되었습니다.\n(${foundPhones.join(', ')})`);
+      render();
+    }
+
+    async function unlinkProject(docId) {
+      if (!confirm('프로젝트 연결을 해제하시겠습니까?')) return;
+
+      const { db, doc, updateDoc } = window.WORKS_DB;
+      if (!db) {
+        alert('Firebase 연결 오류');
+        return;
+      }
+
+      try {
+        await updateDoc(doc(db, 'crm_customers', docId), {
+          projectGroup: '',
+          projectName: ''
+        });
+        closeCustomerHistory();
+        alert('프로젝트 연결이 해제되었습니다.');
+        render();
+      } catch (e) {
+        console.error('프로젝트 해제 실패:', e);
+        alert('프로젝트 해제 중 오류가 발생했습니다.');
+      }
+    }
+
     function openEditPanel(id) {
       const c = customers.find(x => x.id === id);
       if (!c) return;
@@ -3952,7 +4376,7 @@
       panel.id = 'editPanel';
       panel.className = 'fixed inset-0 z-[100] flex items-center justify-center bg-black/30 backdrop-blur-sm';
       const currentProducts = (c.product || '').split(',').map(p => p.trim()).filter(Boolean);
-      const branchOptions = ['본사','현방','강남지사','강동지사','강북지사','부산지사','호남제주지사','중부지사'];
+      const branchOptions = getBranchOptions();
       panel.innerHTML = `
         <div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between p-5 border-b border-neutral-100">
@@ -4048,15 +4472,28 @@
                 </select>
               </div>
             </div>
-            <!-- 제품군 -->
+            <!-- 제품군 (카테고리별 아코디언) -->
             <div>
-              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-2">제품군</label>
-              <div class="flex flex-wrap gap-1.5">
-                ${CRM_PRODUCTS.map(p => `
-                <label class="flex items-center gap-1 px-2.5 py-1.5 border border-neutral-200 rounded-lg cursor-pointer text-[10px] font-bold has-[:checked]:bg-black has-[:checked]:text-white has-[:checked]:border-black transition-all">
-                  <input type="checkbox" name="editProductCheck" value="${p}" ${currentProducts.includes(p) ? 'checked' : ''} class="w-2.5 h-2.5 accent-black" />
-                  ${p}
-                </label>`).join('')}
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest block mb-2">제품군 (카테고리 선택 후 제품 선택)</label>
+              <div class="space-y-2">
+                ${PRODUCT_CATEGORIES.map(cat => `
+                <div class="border border-neutral-200 rounded-xl overflow-hidden">
+                  <div class="flex items-center gap-2 px-3 py-2.5 bg-neutral-50 cursor-pointer hover:bg-neutral-100 transition-colors" onclick="this.nextElementSibling.classList.toggle('hidden')">
+                    <i data-lucide="chevron-right" class="w-3 h-3 text-neutral-400"></i>
+                    <span class="text-[10px] font-black text-neutral-600">${cat.label}</span>
+                  </div>
+                  <div class="hidden px-3 py-2 space-y-1.5 bg-white">
+                    ${cat.items.map(item => {
+                      const fullValue = cat.label + ' > ' + item;
+                      const isChecked = currentProducts.includes(fullValue);
+                      return `
+                    <label class="flex items-center gap-2 cursor-pointer py-1">
+                      <input type="checkbox" name="editProductCheck" value="${fullValue}" ${isChecked ? 'checked' : ''} class="w-3 h-3 accent-black" />
+                      <span class="text-[10px] font-bold text-neutral-600">${item}</span>
+                    </label>`;
+                    }).join('')}
+                  </div>
+                </div>`).join('')}
               </div>
             </div>
             <!-- 상담내용 -->
@@ -4329,6 +4766,7 @@
           ...data,
           orderType: 'product',
           status: '접수',
+          paymentStatus: '미입금',
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp()
         });
@@ -4340,12 +4778,35 @@
       }
     }
 
+    // ===== 입금상태 변경 (본사 전용) =====
+    async function updatePaymentStatus(orderId, newStatus) {
+      if (currentType !== 'hq') return;
+
+      try {
+        const { db, doc, updateDoc } = window.WORKS_DB;
+        await updateDoc(doc(db, 'works_orders', orderId), {
+          paymentStatus: newStatus,
+          updatedAt: new Date()
+        });
+        render();
+      } catch(e) {
+        console.error('Payment status update error:', e);
+        alert('입금상태 변경 실패: ' + e.message);
+      }
+    }
+
     // ===== 생산 단계 클릭 변경 (본사 전용) =====
     async function advanceStage(orderId, stageName, stageIdx) {
       if (currentType !== 'hq') return;
 
       const order = orders.find(o => o.id === orderId);
       if (!order) return;
+
+      // 미입금 경고
+      const paymentStatus = order.paymentStatus || '미입금';
+      if (paymentStatus !== '입금확인') {
+        alert('입금 미확인 발주입니다. 입금 확인 후 생산을 진행해주세요.');
+      }
 
       const ps = order.productionStages || {};
       const currentStatus = (ps[stageName] || {}).status || 'pending';
@@ -4735,8 +5196,12 @@
           </div>
         </div>
 
-        <div class="mb-6">
+        <div class="mb-6 flex gap-3">
           <button onclick="openLeaveRequest()" class="bg-black text-white rounded-xl px-4 py-3 text-[11px] font-black uppercase tracking-widest hover:bg-neutral-800 transition-colors">+ 연차신청</button>
+          ${currentType === 'hq' ? `
+          <button onclick="openBulkLeaveForm()" class="bg-red-500 text-white rounded-xl px-4 py-3 text-[11px] font-black uppercase tracking-widest hover:bg-red-600 transition-colors flex items-center gap-2">
+            <i data-lucide="users" class="w-3.5 h-3.5"></i> 전직원 일괄 연차
+          </button>` : ''}
         </div>
 
         <div class="space-y-3">
@@ -4870,7 +5335,7 @@
                 </div>
                 <div>
                   <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">연차 유형</label>
-                  <select id="leaveType" class="input-base mt-1">
+                  <select id="leaveType" class="input-base mt-1" onchange="toggleLeaveTimeSlot()">
                     <option value="연차">연차 (1일)</option>
                     <option value="반차">반차 (0.5일)</option>
                     <option value="반반차">반반차 (0.25일)</option>
@@ -4879,6 +5344,24 @@
                     <option value="긴급">긴급 휴가</option>
                     <option value="공가">공가</option>
                     <option value="특별">특별 휴가</option>
+                  </select>
+                </div>
+                <!-- 반차 시간대 선택 -->
+                <div id="halfDaySlot" class="hidden">
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">반차 시간대</label>
+                  <select id="leaveHalfType" class="input-base mt-1">
+                    <option value="오전반차">오전반차 (09:00~14:00)</option>
+                    <option value="오후반차">오후반차 (14:00~18:00)</option>
+                  </select>
+                </div>
+                <!-- 반반차 시간대 선택 -->
+                <div id="quarterDaySlot" class="hidden">
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">반반차 시간대</label>
+                  <select id="leaveQuarterType" class="input-base mt-1">
+                    <option value="09:00~11:00">09:00 ~ 11:00</option>
+                    <option value="11:00~14:00">11:00 ~ 14:00</option>
+                    <option value="14:00~16:00">14:00 ~ 16:00</option>
+                    <option value="16:00~18:00">16:00 ~ 18:00</option>
                   </select>
                 </div>
                 <div>
@@ -4890,8 +5373,8 @@
                   <input type="date" id="leaveEndDate" class="input-base mt-1">
                 </div>
                 <div>
-                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">사유</label>
-                  <textarea id="leaveReason" placeholder="사유를 입력하세요" class="input-base mt-1"></textarea>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">사유 <span class="text-neutral-300">(선택)</span></label>
+                  <textarea id="leaveReason" placeholder="사유를 입력하세요 (선택사항)" class="input-base mt-1"></textarea>
                 </div>
                 <div class="flex gap-2">
                   <button onclick="closeLeaveRequest()" class="flex-1 bg-neutral-200 text-black rounded-xl py-3 font-black uppercase tracking-widest hover:bg-neutral-300 transition-colors text-[11px]">취소</button>
@@ -5030,6 +5513,45 @@
       document.getElementById('leaveEndDate').value = today;
     }
 
+    function openBulkLeaveForm() {
+      const date = prompt('전직원 일괄 연차 날짜를 입력하세요 (예: 2026-04-18)');
+      if (!date) return;
+      const reason = prompt('사유를 입력하세요 (예: 회사 행사, 공휴일 브릿지)');
+      if (reason === null) return;
+      if (!confirm(`${date} 전직원 일괄 연차를 등록합니다.\n사유: ${reason || '(미입력)'}\n\n진행하시겠습니까?`)) return;
+      saveBulkLeave(date, reason);
+    }
+
+    async function saveBulkLeave(date, reason) {
+      try {
+        const { db, collection, addDoc, serverTimestamp } = window.WORKS_DB;
+        await addDoc(collection(db, 'works_leave_requests'), {
+          applicant: '전직원',
+          type: '연차',
+          timeSlot: '',
+          startDate: date,
+          endDate: date,
+          reason: reason || '전직원 일괄 연차',
+          branch: '본사',
+          isBulk: true,
+          status: '승인',
+          approvedBy: currentManager || 'Master',
+          approvedAt: new Date().toISOString(),
+          createdAt: serverTimestamp()
+        });
+        alert('✅ 전직원 일괄 연차가 등록되었습니다.');
+        render();
+      } catch(e) { alert('등록 실패: ' + e.message); }
+    }
+
+    function toggleLeaveTimeSlot() {
+      const type = document.getElementById('leaveType').value;
+      const halfSlot = document.getElementById('halfDaySlot');
+      const quarterSlot = document.getElementById('quarterDaySlot');
+      if (halfSlot) halfSlot.classList.toggle('hidden', type !== '반차');
+      if (quarterSlot) quarterSlot.classList.toggle('hidden', type !== '반반차');
+    }
+
     function closeLeaveRequest() {
       leaveModalOpen = false;
       document.getElementById('leaveModal').classList.add('hidden');
@@ -5041,13 +5563,18 @@
       const startDate = document.getElementById('leaveStartDate').value;
       const endDate = document.getElementById('leaveEndDate').value;
       const reason = document.getElementById('leaveReason').value;
+      // 반차/반반차 시간대
+      let timeSlot = '';
+      if (type === '반차') timeSlot = document.getElementById('leaveHalfType')?.value || '';
+      if (type === '반반차') timeSlot = document.getElementById('leaveQuarterType')?.value || '';
 
-      if (!applicant || !startDate || !endDate || !reason) { alert('필수 항목을 입력하세요.'); return; }
+      if (!applicant || !startDate || !endDate) { alert('신청자와 날짜를 입력하세요.'); return; }
 
       try {
         const { db, collection, addDoc, serverTimestamp } = window.WORKS_DB;
         await addDoc(collection(db, 'works_leave_requests'), {
-          applicant, type, startDate, endDate, reason,
+          applicant, type, timeSlot, startDate, endDate, reason,
+          branch: currentBranch || '본사',
           status: '대기',
           createdAt: serverTimestamp()
         });
@@ -5059,12 +5586,26 @@
     async function approveLeave(id) {
       if (!confirm('이 신청을 승인하시겠습니까?')) return;
       try {
-        const { db, doc, updateDoc } = window.WORKS_DB;
+        const { db, doc, updateDoc, collection, addDoc, serverTimestamp } = window.WORKS_DB;
         await updateDoc(doc(db, 'works_leave_requests', id), {
           status: '승인',
           approvedBy: currentManager || '본사',
           approvedAt: new Date().toISOString()
         });
+        // 연차 → 주요일정 다이어리 자동 연동
+        const leave = leaveRequests.find(l => l.id === id);
+        if (leave) {
+          const timeInfo = leave.timeSlot ? ` (${leave.timeSlot})` : '';
+          await addDoc(collection(db, 'works_schedules'), {
+            type: 'leave',
+            title: `[${leave.type}${timeInfo}] ${leave.applicant}`,
+            date: leave.startDate,
+            endDate: leave.endDate !== leave.startDate ? leave.endDate : '',
+            memo: leave.reason || '',
+            branch: leave.branch || '본사',
+            createdAt: serverTimestamp()
+          });
+        }
       } catch(e) { console.error('Approve error:', e); alert('승인 실패'); }
     }
 
@@ -5358,8 +5899,25 @@
 
     async function updateReservationStatus(id, status) {
       try {
-        const { db, doc, updateDoc } = window.WORKS_DB;
+        const { db, doc, updateDoc, collection, addDoc, serverTimestamp } = window.WORKS_DB;
         await updateDoc(doc(db, 'showroom_reservations', id), { status });
+        // 확인(승인) 시 주요일정 다이어리에 자동 등록
+        if (status === '확인') {
+          const res = showroomReservations.find(r => r.id === id);
+          if (res) {
+            await addDoc(collection(db, 'works_schedules'), {
+              type: 'showroom',
+              title: `[쇼룸] ${res.name || '고객'} - ${res.showroom || ''}`,
+              date: res.date || '',
+              time: res.time || '',
+              phone: res.phone || '',
+              customer: res.name || '',
+              memo: res.message || '',
+              branch: '본사',
+              createdAt: serverTimestamp()
+            });
+          }
+        }
       } catch(e) { console.error('Status update error:', e); alert('상태 업데이트 실패'); }
     }
 

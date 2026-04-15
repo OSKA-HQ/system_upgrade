@@ -37,9 +37,13 @@
         messagingSenderId: "778732114280",
         appId: "1:778732114280:web:96e00aff42bdbff3bf06dd"
       });
-      firebase.auth().signInAnonymously()
+      window.QUOTE_DB = null;
+      window._fbAuthReady = firebase.auth().signInAnonymously()
+        .then(function() {
+          window.QUOTE_DB = firebase.firestore();
+          console.log('[Firebase] 인증 완료, Firestore 연결됨');
+        })
         .catch(function(err) { console.error('Firebase Auth Error:', err); });
-      window.QUOTE_DB = firebase.firestore();
     </script>
 
     <script>
@@ -211,12 +215,6 @@
                                     <label class="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Branch / 지사<span class="text-red-500 ml-1">*</span></label>
                                     <select id="branch-select" class="input-base" onchange="handleBranchChange()">
                                         <option value="">지사 선택</option>
-                                        <option value="본사">본사</option>
-                                        <option value="강북지사">강북지사</option>
-                                        <option value="강남지사">강남지사</option>
-                                        <option value="강동지사">강동지사</option>
-                                        <option value="경상지사">경상지사</option>
-                                        <option value="전라(제주)지사">전라(제주)지사</option>
                                         <option value="직접입력">직접 입력</option>
                                     </select>
                                     <input type="text" id="branch-input" class="input-base mt-2 hidden" placeholder="지사명 입력">
@@ -225,14 +223,6 @@
                                     <label class="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Manager / 담당자<span class="text-red-500 ml-1">*</span></label>
                                     <select id="handler-select" class="input-base" onchange="handleHandlerChange()">
                                         <option value="">담당자 선택</option>
-                                        <option value="본사 이한울 이사">본사 이한울 이사</option>
-                                        <option value="본사 김선준 실장">본사 김선준 실장</option>
-                                        <option value="본사 장윤서 프로">본사 장윤서 프로</option>
-                                        <option value="강북지사 이범호 이사">강북지사 이범호 이사</option>
-                                        <option value="강남지사 백원준 이사">강남지사 백원준 이사</option>
-                                        <option value="강동지사 이호남 이사">강동지사 이호남 이사</option>
-                                        <option value="경남지사 이주훈 이사">경남지사 이주훈 이사</option>
-                                        <option value="전라제주지사 이우경 이사">전라제주지사 이우경 이사</option>
                                         <option value="직접 입력">직접 입력</option>
                                     </select>
                                     <input type="text" id="handler-input" class="input-base mt-2 hidden" placeholder="담당자명 입력">

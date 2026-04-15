@@ -300,11 +300,6 @@
                                     <label class="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Branch / 지사</label>
                                     <select id="branch-select" class="input-base" onchange="handleBranchChange()">
                                         <option value="">지사 선택</option>
-                                        <option value="본사">본사</option>
-                                        <option value="강북지사">강북지사</option>
-                                        <option value="강남지사">강남지사</option>
-                                        <option value="경상지사">경상지사</option>
-                                        <option value="전라(제주)지사">전라(제주)지사</option>
                                         <option value="직접입력">직접 입력</option>
                                     </select>
                                     <input type="text" id="branch-input" class="input-base mt-2 hidden" placeholder="지사명 입력">
@@ -313,13 +308,6 @@
                                     <label class="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Manager / 담당자</label>
                                     <select id="handler-select" class="input-base" onchange="handleHandlerChange()">
                                         <option value="">담당자 선택</option>
-                                        <option value="본사 이한울 이사">본사 이한울 이사</option>
-                                        <option value="본사 김선준 실장">본사 김선준 실장</option>
-                                        <option value="본사 장윤서 프로">본사 장윤서 프로</option>
-                                        <option value="강북지사 이범호 이사">강북지사 이범호 이사</option>
-                                        <option value="강남지사 백원준 이사">강남지사 백원준 이사</option>
-                                        <option value="경남지사 이주훈 이사">경남지사 이주훈 이사</option>
-                                        <option value="전라제주지사 이우경 이사">전라제주지사 이우경 이사</option>
                                         <option value="직접 입력">직접 입력</option>
                                     </select>
                                     <input type="text" id="handler-input" class="input-base mt-2 hidden" placeholder="담당자명 입력">
@@ -621,12 +609,68 @@
 
         // --- 2. 초기화 ---
         document.addEventListener('DOMContentLoaded', () => {
+            applyBranchFromURL();
             initDate();
             initRegions();
             loadData() || initDefaultRows();
             setupAutoSave();
             switchTab(1);
         });
+
+        function applyBranchFromURL() {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const branch = params.get('branch');
+                const manager = params.get('manager');
+                const branchesRaw = params.get('branches');
+                const managersRaw = params.get('managers');
+                if (!branch) return;
+
+                let allBranches = {};
+                let allManagers = {};
+                try { if (branchesRaw) allBranches = JSON.parse(branchesRaw); } catch(e) {}
+                try { if (managersRaw) allManagers = JSON.parse(managersRaw); } catch(e) {}
+
+                // 지사 select 동적 생성
+                const sel = document.getElementById('branch-select');
+                if (sel && Object.keys(allBranches).length > 0) {
+                    let opts = '<option value="">지사 선택</option><option value="본사">본사</option>';
+                    Object.keys(allBranches).forEach(name => { opts += '<option value="' + name + '">' + name + '</option>'; });
+                    opts += '<option value="직접입력">직접 입력</option>';
+                    sel.innerHTML = opts;
+                }
+                if (sel) {
+                    const match = Array.from(sel.options).find(o => o.value === branch);
+                    if (match) { sel.value = branch; handleBranchChange(); }
+                    else { sel.value = '직접입력'; handleBranchChange(); const inp = document.getElementById('branch-input'); if (inp) inp.value = branch; }
+                }
+
+                // 담당자 select 동적 생성
+                const hSel = document.getElementById('handler-select');
+                if (hSel) {
+                    let hOpts = '<option value="">담당자 선택</option>';
+                    Object.entries(allBranches).forEach(([bName, bData]) => {
+                        (bData.staff || []).forEach(s => {
+                            if (s.name) {
+                                const label = bName + ' ' + s.name + (s.position ? ' ' + s.position : '');
+                                hOpts += '<option value="' + label + '">' + label + '</option>';
+                            }
+                        });
+                    });
+                    hOpts += '<option value="직접 입력">직접 입력</option>';
+                    hSel.innerHTML = hOpts;
+                }
+                if (hSel && manager) {
+                    const fullName = branch + ' ' + manager;
+                    let match = Array.from(hSel.options).find(o => o.value === fullName);
+                    if (!match) { const opt = document.createElement('option'); opt.value = fullName; opt.text = fullName; hSel.insertBefore(opt, hSel.lastElementChild); }
+                    hSel.value = fullName;
+                    handleHandlerChange();
+                    hSel.disabled = true; hSel.style.opacity = '0.7';
+                    if (sel) { sel.disabled = true; sel.style.opacity = '0.7'; }
+                }
+            } catch(e) { console.log('Branch URL apply:', e); }
+        }
 
         function initDate() {
             const today = new Date().toLocaleDateString('ko-KR', { year:'numeric', month:'2-digit', day:'2-digit' });
