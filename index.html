@@ -29,7 +29,7 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
     import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-    import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteField, collection, addDoc, getDocs, query, orderBy, deleteDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteField, collection, addDoc, getDocs, query, orderBy, deleteDoc, serverTimestamp, onSnapshot, where } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
     import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-storage.js";
 
     const firebaseConfig = {
@@ -49,7 +49,7 @@
     const db = getFirestore(app);
 
     const storage = getStorage(app);
-    window.OSKA_DB = { auth, db, storage, appId, initialToken, signInWithCustomToken, signInAnonymously, doc, getDoc, setDoc, updateDoc, deleteField, collection, addDoc, getDocs, query, orderBy, deleteDoc, serverTimestamp, storageRef, uploadBytes, getDownloadURL };
+    window.OSKA_DB = { auth, db, storage, appId, initialToken, signInWithCustomToken, signInAnonymously, doc, getDoc, setDoc, updateDoc, deleteField, collection, addDoc, getDocs, query, orderBy, deleteDoc, serverTimestamp, onSnapshot, where, storageRef, uploadBytes, getDownloadURL };
   </script>
 
   <style>
@@ -76,6 +76,8 @@
     let ACCOUNTS = {};
     let EMAILJS_CONFIG = {};
     let ADMIN_PASSWORD = '';
+    // 어드민 접근 가능 계정 목록 (Master는 항상 포함, Firestore config.adminAccounts로 관리)
+    let ADMIN_ACCOUNTS = ['Master', '이한울'];
     // 계정 순서 및 숨김 설정: { order: ['본사','강남지사',...], hidden: ['강동지사'] }
     let ACCOUNT_SETTINGS = { order: [], hidden: [] };
     // 계정 유형: { '본사': 'hq', '강남지사': 'branch', '대리점A': 'dealer' }
@@ -84,6 +86,12 @@
     let ACCOUNT_MANAGERS = {};
     // 지사/대리점 데이터: { '지사명': { type, bizNumber, address, email, phone, ownerName, staff: [{id, pw, name, phone, email}, ...] } }
     let BRANCHES = {};
+    // 본사 직원 데이터: [{ id, name, phone, dob, hireDate, dept, position, status }]
+    let HQ_EMPLOYEES = [];
+    // 알림 데이터: [{ id, message, type, createdAt, read }]
+    let NOTIFICATIONS = [];
+    // 담당자 추가 요청: [{ id, branchName, staffName, staffPhone, status, createdAt }]
+    let STAFF_REQUESTS = [];
 
     const DEFAULT_ARCHIVE_ITEMS = [
       { title: '공식 홈페이지', sub: 'oska.co.kr', icon: 'home', url: 'http://www.oska.co.kr' },
@@ -116,6 +124,7 @@
       adminMsg: '',
       adminMsgType: 'success',
       editingArchiveIdx: -1,
+      notifOpen: false,
       expandedBranch: null
     };
 
@@ -204,6 +213,10 @@
           ACCOUNT_SETTINGS = data.accountSettings || { order: [], hidden: [] };
           if (!ACCOUNT_SETTINGS.order) ACCOUNT_SETTINGS.order = [];
           if (!ACCOUNT_SETTINGS.hidden) ACCOUNT_SETTINGS.hidden = [];
+          // 최상위 필드들을 ACCOUNT_SETTINGS로 merge (페이지 새로고침 시 값 보존)
+          if (data.loginEmailAlert !== undefined) ACCOUNT_SETTINGS.loginEmailAlert = data.loginEmailAlert;
+          if (data.asEmailRecipient) ACCOUNT_SETTINGS.asEmailRecipient = data.asEmailRecipient;
+          if (data.orgRNR) ACCOUNT_SETTINGS.orgRNR = data.orgRNR;
           ACCOUNT_TYPES = data.accountTypes || {};
           ACCOUNT_MANAGERS = data.accountManagers || {};
           BRANCHES = data.branches || {};
@@ -218,6 +231,19 @@
           if (data.archiveItems && Array.isArray(data.archiveItems) && data.archiveItems.length > 0) {
             ARCHIVE_ITEMS = data.archiveItems;
           }
+          // 어드민 접근 계정 로드
+          if (data.adminAccounts && Array.isArray(data.adminAccounts) && data.adminAccounts.length > 0) {
+            ADMIN_ACCOUNTS = data.adminAccounts;
+            if (!ADMIN_ACCOUNTS.includes('Master')) ADMIN_ACCOUNTS.unshift('Master'); // Master 항상 포함
+          }
+          // 본사 직원 데이터 로드
+          if (data.hqEmployees && Array.isArray(data.hqEmployees)) {
+            HQ_EMPLOYEES = data.hqEmployees;
+          }
+          // 담당자 추가 요청 로드
+          if (data.staffRequests && Array.isArray(data.staffRequests)) {
+            STAFF_REQUESTS = data.staffRequests;
+          }
           if (EMAILJS_CONFIG.publicKey) emailjs.init(EMAILJS_CONFIG.publicKey);
 
           // 마스터 계정: Firestore에서 로드
@@ -228,10 +254,134 @@
           if (!ACCOUNT_MANAGERS[MASTER_ACCOUNT.id]) ACCOUNT_MANAGERS[MASTER_ACCOUNT.id] = MASTER_ACCOUNT.manager;
 
           state.isConfigLoaded = true;
+
+          // 새로고침 후 로그인 세션 복원
+          try {
+            const saved = sessionStorage.getItem('oska_session');
+            if (saved) {
+              const sess = JSON.parse(saved);
+              // staff 로그인이었다면 ACCOUNT_MANAGERS/TYPES 복원
+              if (sess.managerName) ACCOUNT_MANAGERS[sess.currentUser] = sess.managerName;
+              if (sess.accountType) ACCOUNT_TYPES[sess.currentUser] = sess.accountType;
+              state.isLoggedIn = true;
+              state.currentUser = sess.currentUser;
+              state.loginCategory = sess.loginCategory || '본사';
+            }
+          } catch(e) { sessionStorage.removeItem('oska_session'); }
+
           statusText.innerText = "Security Verified.";
           document.getElementById('loading').style.opacity = '0';
           setTimeout(() => document.getElementById('loading').remove(), 500);
           render();
+          subscribeNotifications(); // 알림 실시간 구독 시작
+
+          // 누락 지사 Firebase 자동 seed (별도 try-catch — Connection Error에 영향 없음)
+          try {
+            const SEED_BRANCHES = {
+              '강동지사':   { type:'branch', status:'active',  ownerName:'이호남', phone:'010-9991-1638', bizNumber:'', address:'', email:'', regions:[], staff:[], validFrom:'' },
+              '중부지사':   { type:'branch', status:'active',  ownerName:'이철승', phone:'010-5132-5190', bizNumber:'', address:'', email:'', regions:[], staff:[], validFrom:'' },
+              '강남지사':   { type:'branch', status:'dormant', ownerName:'백원준', phone:'010-8609-5953', bizNumber:'', address:'', email:'', regions:[], staff:[], validFrom:'' },
+              '강북지사':   { type:'branch', status:'closed',  ownerName:'이범호', phone:'010-6830-0913', bizNumber:'', address:'', email:'', regions:[], staff:[], validFrom:'' },
+              '호남제주지사':{ type:'branch', status:'closed', ownerName:'이우경', phone:'010-8354-5946', bizNumber:'', address:'', email:'', regions:[], staff:[], validFrom:'' }
+            };
+            let seedNeeded = false;
+            Object.entries(SEED_BRANCHES).forEach(([name, val]) => {
+              if (!BRANCHES[name]) { BRANCHES[name] = val; seedNeeded = true; }
+            });
+            if (seedNeeded) {
+              const seedRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+              updateDoc(seedRef, { branches: BRANCHES }).catch(e => console.warn('seed branches skip:', e));
+            }
+          } catch(e) { console.warn('seed error (ignored):', e); }
+
+          // 지사 대표자 계정 seed (BRANCHES.staff에 추가, 이우경/Test 제외)
+          try {
+            const BRANCH_LEADERS = {
+              '부산지사':   { id:'이주훈', pw:'0000', name:'이주훈', phone:'010-5810-9107', email:'', position:'대표' },
+              '강동지사':   { id:'이호남', pw:'0000', name:'이호남', phone:'010-9991-1638', email:'', position:'대표' },
+              '중부지사':   { id:'이철승', pw:'0000', name:'이철승', phone:'010-5132-5190', email:'', position:'대표' },
+              '강남지사':   { id:'백원준', pw:'0000', name:'백원준', phone:'010-8609-5953', email:'', position:'대표' },
+              '강북지사':   { id:'이범호', pw:'0000', name:'이범호', phone:'010-6830-0913', email:'', position:'대표' }
+            };
+            let leaderSeedNeeded = false;
+            Object.entries(BRANCH_LEADERS).forEach(function([bName, leader]) {
+              if (!BRANCHES[bName]) return;
+              if (!BRANCHES[bName].staff) BRANCHES[bName].staff = [];
+              // 이름이 같은 기존 항목 찾기
+              const existingIdx = BRANCHES[bName].staff.findIndex(function(s){ return s.name === leader.name; });
+              if (existingIdx >= 0) {
+                // 있지만 id나 pw가 다르면 업데이트
+                const s = BRANCHES[bName].staff[existingIdx];
+                if (s.id !== leader.id || s.pw !== '0000') {
+                  BRANCHES[bName].staff[existingIdx] = Object.assign({}, s, { id: leader.id, pw: '0000' });
+                  leaderSeedNeeded = true;
+                }
+              } else {
+                BRANCHES[bName].staff.unshift(leader); // 대표는 맨 앞에
+                leaderSeedNeeded = true;
+              }
+            });
+            if (leaderSeedNeeded) {
+              const lRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+              updateDoc(lRef, { branches: BRANCHES }).catch(e => console.warn('seed leaders skip:', e));
+            }
+          } catch(e) { console.warn('seed leaders error (ignored):', e); }
+
+          // 불필요 지사 일회성 삭제 (개똥지사 등 테스트 데이터)
+          try {
+            const CLEANUP_BRANCHES = ['개똥지사'];
+            let cleanupNeeded = false;
+            CLEANUP_BRANCHES.forEach(function(name) {
+              if (BRANCHES[name]) { delete BRANCHES[name]; cleanupNeeded = true; }
+            });
+            if (cleanupNeeded) {
+              const cRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+              updateDoc(cRef, { branches: BRANCHES }).catch(e => console.warn('cleanup branches skip:', e));
+            }
+          } catch(e) { console.warn('cleanup error (ignored):', e); }
+
+          // 본사 전직원 계정 일괄 seed (없는 계정만 추가)
+          try {
+            const HQ_STAFF = ['이우경','이남주','도성진','투진드라','김명석','김수묵','정진현','김민정','김연아','김도희','김상이','김선준','장윤서'];
+            let staffSeedNeeded = false;
+            HQ_STAFF.forEach(function(name) {
+              if (!ACCOUNTS[name]) {
+                ACCOUNTS[name] = '0000';
+                ACCOUNT_TYPES[name] = 'hq';
+                if (!ACCOUNT_SETTINGS.order.includes(name)) ACCOUNT_SETTINGS.order.push(name);
+                staffSeedNeeded = true;
+              }
+            });
+            if (staffSeedNeeded) {
+              const staffRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+              updateDoc(staffRef, { accounts: ACCOUNTS, accountTypes: ACCOUNT_TYPES, accountSettings: ACCOUNT_SETTINGS }).catch(e => console.warn('seed staff skip:', e));
+            }
+          } catch(e) { console.warn('seed staff error (ignored):', e); }
+
+          // hqEmployees 초기 seed (비어있으면 조직도 데이터 기반으로 생성)
+          try {
+            if (HQ_EMPLOYEES.length === 0) {
+              const DEFAULT_EMPLOYEES = [
+                {id:'이한울', name:'이한울', phone:'', dob:'', hireDate:'', dept:'경영', position:'대표이사', status:'재직'},
+                {id:'이우경', name:'이우경', phone:'', dob:'', hireDate:'', dept:'생산본부', position:'이사', status:'재직'},
+                {id:'이남주', name:'이남주', phone:'', dob:'', hireDate:'', dept:'임가공팀', position:'팀장', status:'재직'},
+                {id:'도성진', name:'도성진', phone:'', dob:'', hireDate:'', dept:'임가공팀', position:'사원', status:'재직'},
+                {id:'투진드라', name:'투진드라', phone:'', dob:'', hireDate:'', dept:'임가공팀', position:'사원', status:'재직'},
+                {id:'김명석', name:'김명석', phone:'010-3339-0947', dob:'', hireDate:'', dept:'포장출하팀', position:'팀장', status:'재직'},
+                {id:'김수묵', name:'김수묵', phone:'010-2718-9005', dob:'', hireDate:'', dept:'기술지원팀', position:'팀장', status:'재직'},
+                {id:'정진현', name:'정진현', phone:'010-2156-3259', dob:'', hireDate:'', dept:'사업본부', position:'이사', status:'재직'},
+                {id:'김민정', name:'김민정', phone:'010-2656-1725', dob:'', hireDate:'', dept:'브랜드전략팀', position:'팀장', status:'재직'},
+                {id:'김연아', name:'김연아', phone:'010-9550-9375', dob:'', hireDate:'', dept:'브랜드전략팀', position:'프로', status:'재직'},
+                {id:'김도희', name:'김도희', phone:'010-5560-2997', dob:'', hireDate:'', dept:'브랜드전략팀', position:'프로', status:'재직'},
+                {id:'김상이', name:'김상이', phone:'010-8874-6022', dob:'', hireDate:'', dept:'브랜드전략팀', position:'팀장', status:'육아휴직'},
+                {id:'김선준', name:'김선준', phone:'010-5568-5902', dob:'', hireDate:'', dept:'기술영업팀', position:'실장', status:'재직'},
+                {id:'장윤서', name:'장윤서', phone:'010-6762-7391', dob:'', hireDate:'', dept:'기술영업팀', position:'프로', status:'재직'}
+              ];
+              HQ_EMPLOYEES = DEFAULT_EMPLOYEES;
+              const empRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+              updateDoc(empRef, { hqEmployees: HQ_EMPLOYEES }).catch(e => console.warn('seed hqEmployees skip:', e));
+            }
+          } catch(e) { console.warn('seed hqEmployees error (ignored):', e); }
         } else {
           statusText.innerText = `Document not found at: artifacts/${appId}/public/data/settings/config`;
           statusText.classList.add('text-red-500');
@@ -243,8 +393,30 @@
       }
     }
 
-    async function sendLoginNotification(branch, password) {
+    // 로그인 기록 저장 (모든 로그인 유형에 대해 항상 실행)
+    async function saveLoginLog(branch, accountType) {
+      try {
+        const { db, appId, collection, addDoc, serverTimestamp } = window.OSKA_DB;
+        await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'login_logs'), {
+          account: branch,
+          accountType: accountType || '',
+          device: navigator.userAgent.includes('Mobile') ? '모바일' : 'PC',
+          browser: (navigator.userAgent.match(/(Chrome|Safari|Firefox|Edge|Whale)/) || ['기타'])[0],
+          screenSize: window.screen.width + 'x' + window.screen.height,
+          loginAt: serverTimestamp()
+        });
+      } catch(e) { console.warn('login log save:', e); }
+    }
+
+    async function sendLoginNotification(branch, password, accountType) {
+      // 1. Firestore에 로그인 기록 저장 (항상 실행)
+      await saveLoginLog(branch, accountType);
+
+      // 2. EmailJS 알람 (어드민이 ON한 경우 + 설정된 경우에만)
       if (!EMAILJS_CONFIG.publicKey) return;
+      // 어드민 알람 ON/OFF 설정 (기본 ON)
+      const emailAlertEnabled = (ACCOUNT_SETTINGS.loginEmailAlert !== false);
+      if (!emailAlertEnabled) return;
       try {
         const geoResponse = await fetch('https://ipapi.co/json/').catch(() => null);
         const geoData = geoResponse ? await geoResponse.json() : {};
@@ -276,7 +448,9 @@
 
       // 마스터 계정 체크
       if (inputId === MASTER_ACCOUNT.id && inputPw === MASTER_ACCOUNT.pw) {
-        // 마스터는 본사 전용이므로 이메일 알림 생략
+        // 마스터는 본사 전용이므로 이메일 알림 생략 (단, 로그 기록은 항상 저장)
+        saveLoginLog(inputId, 'master');
+        sessionStorage.setItem('oska_session', JSON.stringify({ currentUser: inputId, loginCategory: inputCategory }));
         setState({ isLoggedIn: true, currentUser: inputId, loginError: '', loginPw: '', loginId: '' });
         return;
       }
@@ -286,17 +460,20 @@
         setState({ loginError: '현재 비활성화된 계정입니다.' });
       } else if (ACCOUNTS[inputId] === inputPw) {
         const acctType = ACCOUNT_TYPES[inputId] || '';
-        const categoryMap = { '본사': 'hq', '지사': 'branch', '대리점': 'dealer', '기타': '' };
+        const categoryMap = { '본사': 'hq', '지사': 'branch', '대리점': 'dealer', '시공': 'construction', '기타': '' };
         const expectedType = categoryMap[inputCategory] || '';
         // 카테고리 일치 확인 (기타는 모든 유형 허용)
         if (inputCategory !== '기타' && acctType && acctType !== expectedType) {
           setState({ loginError: '선택한 카테고리와 계정 유형이 일치하지 않습니다.' });
           return;
         }
-        // 본사(hq) 로그인은 이메일 알림 생략
+        // 본사(hq) 로그인은 이메일 알림 생략 (단, 로그는 항상 저장)
         if (acctType !== 'hq') {
-          sendLoginNotification(inputId, inputPw);
+          sendLoginNotification(inputId, inputPw, acctType);
+        } else {
+          saveLoginLog(inputId, acctType || 'hq');
         }
+        sessionStorage.setItem('oska_session', JSON.stringify({ currentUser: inputId, loginCategory: inputCategory }));
         setState({ isLoggedIn: true, currentUser: inputId, loginError: '', loginPw: '', loginId: '' });
       } else {
         // BRANCHES staff 체크 (마스터/기존 ACCOUNTS 체크 다음에)
@@ -312,17 +489,20 @@
         });
         if (staffMatch) {
           const bType = BRANCHES[staffBranch].type || 'branch';
-          const categoryMap = { '본사': 'hq', '지사': 'branch', '대리점': 'dealer', '기타': '' };
+          const categoryMap = { '본사': 'hq', '지사': 'branch', '대리점': 'dealer', '시공': 'construction', '기타': '' };
           const expectedType = categoryMap[inputCategory] || '';
           if (inputCategory !== '기타' && bType && bType !== expectedType) {
             setState({ loginError: '선택한 카테고리와 계정 유형이 일치하지 않습니다.' });
             return;
           }
           if (bType !== 'hq') sendLoginNotification(staffBranch + ' / ' + staffMatch.name, '***');
-          setState({ isLoggedIn: true, currentUser: staffBranch, loginError: '', loginPw: '', loginId: '' });
-          // iframe에 전달될 manager 정보 설정
           ACCOUNT_MANAGERS[staffBranch] = staffMatch.name;
           ACCOUNT_TYPES[staffBranch] = bType;
+          sessionStorage.setItem('oska_session', JSON.stringify({
+            currentUser: staffBranch, loginCategory: inputCategory,
+            managerName: staffMatch.name, accountType: bType
+          }));
+          setState({ isLoggedIn: true, currentUser: staffBranch, loginError: '', loginPw: '', loginId: '' });
           return;
         }
         setState({ loginError: '아이디 또는 비밀번호가 일치하지 않습니다.' });
@@ -330,6 +510,7 @@
     }
 
     function handleLogout() {
+      sessionStorage.removeItem('oska_session');
       setState({ isLoggedIn: false, currentUser: '', currentView: 'dashboard', loginId: '', loginPw: '' });
     }
 
@@ -339,7 +520,9 @@
       if (state.currentView === 'register') { app.innerHTML = renderRegisterForm(); lucide.createIcons(); bindEvents(); return; }
       if (state.currentView === 'register_complete') { app.innerHTML = renderRegisterComplete(); lucide.createIcons(); bindEvents(); return; }
       if (!state.isLoggedIn) app.innerHTML = renderLogin();
-      else if (state.currentView === 'admin') app.innerHTML = renderAdmin();
+      else if (state.currentView === 'admin' && (ADMIN_ACCOUNTS.includes(state.currentUser) || state.currentUser === MASTER_ACCOUNT.id)) app.innerHTML = renderAdmin();
+      else if (state.currentView === 'admin' && (ACCOUNT_TYPES[state.currentUser] === 'branch' || ACCOUNT_TYPES[state.currentUser] === 'dealer')) app.innerHTML = renderBranchAdmin();
+      else if (state.currentView === 'profile') app.innerHTML = renderProfile();
       else if (state.currentView !== 'dashboard') app.innerHTML = renderIframeView();
       else app.innerHTML = renderDashboard();
       lucide.createIcons();
@@ -347,7 +530,7 @@
     }
 
     function renderLogin() {
-      const categories = ['본사', '지사', '대리점', '기타'];
+      const categories = ['본사', '지사', '대리점', '시공', '기타'];
       return `
         <div class="min-h-screen bg-white flex flex-col items-center justify-center p-6 animate-fade-in">
           <div class="w-full max-w-sm mb-12">
@@ -388,6 +571,11 @@
               <button id="btnRegister" class="text-[11px] font-black text-neutral-500 hover:text-black transition-colors underline underline-offset-4 decoration-neutral-300 hover:decoration-black">
                 업체등록 요청
               </button>
+              <div class="mt-4 pt-4 border-t border-neutral-100">
+                <button type="button" onclick="openPasswordResetModal()" class="text-[10px] font-bold text-neutral-400 hover:text-black transition-colors underline underline-offset-4 decoration-neutral-200 hover:decoration-black">
+                  비밀번호를 잊으셨나요?
+                </button>
+              </div>
             </div>
           </div>
           ${renderConfidentialNotice()}
@@ -737,9 +925,13 @@
       let targetUrl = urls[state.currentView];
       // 로그인 지사명 + 담당자 + BRANCHES 데이터 전달
       if ((state.currentView === 'quotation' || state.currentView === 'order' || state.currentView === 'deck') && state.currentUser) {
-        targetUrl += '?branch=' + encodeURIComponent(state.currentUser);
-        if (ACCOUNT_MANAGERS[state.currentUser]) {
-          targetUrl += '&manager=' + encodeURIComponent(ACCOUNT_MANAGERS[state.currentUser]);
+        // HQ 계정은 branch='본사', manager=계정명으로 전달 (드롭다운에 '본사'가 있음)
+        const isHQUser = ACCOUNT_TYPES[state.currentUser] === 'hq' || state.currentUser === MASTER_ACCOUNT.id;
+        const urlBranch = isHQUser ? '본사' : state.currentUser;
+        const urlManager = ACCOUNT_MANAGERS[state.currentUser] || (isHQUser ? state.currentUser : '');
+        targetUrl += '?branch=' + encodeURIComponent(urlBranch);
+        if (urlManager) {
+          targetUrl += '&manager=' + encodeURIComponent(urlManager);
         }
         const managersJson = JSON.stringify(ACCOUNT_MANAGERS);
         targetUrl += '&managers=' + encodeURIComponent(managersJson);
@@ -750,6 +942,7 @@
         Object.entries(BRANCHES).forEach(([name, data]) => {
           safeBranches[name] = {
             type: data.type || 'branch',
+            status: data.status || 'active',
             bizNumber: data.bizNumber || '',
             address: data.address || '',
             email: data.email || '',
@@ -760,7 +953,15 @@
             staff: (data.staff || []).map(s => ({ name: s.name || '', phone: s.phone || '', email: s.email || '', position: s.position || '' }))
           };
         });
-        targetUrl += '&branches=' + encodeURIComponent(JSON.stringify(safeBranches));
+        // branches + hqEmployees 모두 sessionStorage로 전달 (URI Too Long 방지)
+        try {
+          sessionStorage.setItem('oska_branches', JSON.stringify(safeBranches));
+          sessionStorage.setItem('oska_hqEmployees', JSON.stringify(HQ_EMPLOYEES));
+          // order 진입 시 어드민 비밀번호도 전달 (일괄연차 게시 확인용)
+          if (state.currentView === 'order' && ADMIN_PASSWORD) {
+            targetUrl += '&adminpw=' + encodeURIComponent(ADMIN_PASSWORD);
+          }
+        } catch(e) {}
       }
       const title = titles[state.currentView];
       return `
@@ -807,10 +1008,43 @@
                 <i data-lucide="message-square" class="w-3 h-3"></i>
                 DEV SUPPORT
               </button>
-              ${(ACCOUNT_TYPES[state.currentUser] === 'hq' || state.currentUser === MASTER_ACCOUNT.id) ? `
+              <!-- 알림 벨 -->
+              <div class="relative">
+                <button id="notifBell" onclick="setState({notifOpen:!state.notifOpen})" class="relative text-[10px] font-black text-neutral-500 hover:text-black transition-colors flex items-center gap-1.5 border border-neutral-200 px-3 py-1.5 rounded-lg hover:bg-neutral-50">
+                  <i data-lucide="bell" class="w-3 h-3"></i>
+                  <span class="notif-badge absolute -top-1 -right-1 w-4 h-4 rounded-full bg-red-500 text-white text-[7px] font-black items-center justify-center" style="display:none"></span>
+                </button>
+                ${state.notifOpen ? `
+                <div class="absolute right-0 top-10 w-80 bg-white rounded-2xl shadow-2xl border border-neutral-200 z-[200] overflow-hidden">
+                  <div class="flex items-center justify-between px-4 py-3 border-b border-neutral-100">
+                    <span class="text-[10px] font-black uppercase tracking-widest">알림</span>
+                    <button onclick="markAllNotifRead()" class="text-[9px] text-neutral-400 hover:text-black font-bold">모두 읽음</button>
+                  </div>
+                  <div class="max-h-72 overflow-y-auto">
+                    ${NOTIFICATIONS.length === 0 ? '<p class="text-[10px] text-neutral-300 text-center py-6">알림이 없습니다.</p>' :
+                      NOTIFICATIONS.slice(0,20).map(n => {
+                        const timeStr = n.createdAt ? new Date(n.createdAt.seconds ? n.createdAt.seconds*1000 : n.createdAt).toLocaleString('ko-KR',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) : '';
+                        return '<div class="px-4 py-3 border-b border-neutral-50 ' + (n.read ? 'bg-white' : 'bg-blue-50/50') + ' hover:bg-neutral-50 transition-colors">' +
+                          '<p class="text-[10px] font-bold text-neutral-800">' + n.message + '</p>' +
+                          '<p class="text-[9px] text-neutral-400 mt-0.5">' + timeStr + '</p>' +
+                        '</div>';
+                      }).join('')
+                    }
+                  </div>
+                </div>` : ''}
+              </div>
+              <button id="profileBtn" class="text-[10px] font-black text-neutral-500 hover:text-black transition-colors flex items-center gap-1.5 border border-neutral-200 px-3 py-1.5 rounded-lg hover:bg-neutral-50">
+                <i data-lucide="user" class="w-3 h-3"></i>
+                ${state.currentUser}
+              </button>
+              ${(ADMIN_ACCOUNTS.includes(state.currentUser) || state.currentUser === MASTER_ACCOUNT.id) ? `
               <button id="adminBtn" class="text-[10px] font-black text-blue-500 hover:text-blue-700 transition-colors flex items-center gap-1.5 border border-blue-200 px-3 py-1.5 rounded-lg hover:bg-blue-50">
                 <i data-lucide="settings" class="w-3 h-3"></i>
                 ADMIN
+              </button>` : (ACCOUNT_TYPES[state.currentUser] === 'branch' || ACCOUNT_TYPES[state.currentUser] === 'dealer') ? `
+              <button id="adminBtn" class="text-[10px] font-black text-neutral-500 hover:text-black transition-colors flex items-center gap-1.5 border border-neutral-200 px-3 py-1.5 rounded-lg hover:bg-neutral-50">
+                <i data-lucide="users" class="w-3 h-3"></i>
+                담당자 관리
               </button>` : ''}
               <button id="logoutBtn" class="text-[10px] font-black text-neutral-400 hover:text-black transition-colors flex items-center gap-1.5">
                 <i data-lucide="log-out" class="w-3 h-3"></i>
@@ -906,6 +1140,136 @@
       const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
       try { await updateDoc(configRef, { archiveItems: ARCHIVE_ITEMS }); return true; }
       catch (e) { console.error('Save archive error:', e); return false; }
+    }
+
+    function openHireForm() {
+      const modal = document.createElement('div');
+      modal.id = 'hireModal';
+      modal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm';
+      modal.innerHTML = '<div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">' +
+        '<div class="flex items-center justify-between mb-2">' +
+          '<h3 class="text-sm font-black flex items-center gap-2"><i data-lucide="user-plus" class="w-4 h-4"></i>입사 등록</h3>' +
+          '<button onclick="document.getElementById(\'hireModal\').remove()" class="text-neutral-400 hover:text-black"><i data-lucide="x" class="w-4 h-4"></i></button>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div><label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">이름 *</label><input id="hireId" type="text" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" placeholder="홍길동" /></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">전화번호</label><input id="hirePhone" type="tel" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" placeholder="010-0000-0000" oninput="var v=this.value.replace(/[^0-9]/g,\'\');if(v.length<=3)this.value=v;else if(v.length<=7)this.value=v.slice(0,3)+\'-\'+v.slice(3);else this.value=v.slice(0,3)+\'-\'+v.slice(3,7)+\'-\'+v.slice(7,11);" /></div>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div><label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">생년월일</label><input id="hireDob" type="date" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" /></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">입사일</label><input id="hireDate" type="date" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (function(){var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");})() + '" /></div>' +
+        '</div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div><label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">부서 *</label>' +
+          '<select id="hireDept" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1">' +
+          '<option value="경영">경영</option><option value="생산본부">생산본부</option><option value="임가공팀">임가공팀</option><option value="포장출하팀">포장출하팀</option><option value="기술지원팀">기술지원팀</option><option value="사업본부">사업본부</option><option value="브랜드전략팀">브랜드전략팀</option><option value="기술영업팀">기술영업팀</option><option value="R&D">R&D</option>' +
+          '</select></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">직급 *</label>' +
+          '<select id="hirePosition" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1">' +
+          '<option value="사원">사원</option><option value="프로">프로</option><option value="팀장">팀장</option><option value="실장">실장</option><option value="이사">이사</option><option value="대표이사">대표이사</option>' +
+          '</select></div>' +
+        '</div>' +
+        '<button onclick="submitHireForm()" class="w-full h-11 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800 transition-all">등록</button>' +
+      '</div>';
+      document.body.appendChild(modal);
+      lucide.createIcons();
+    }
+
+    async function submitHireForm() {
+      const id = document.getElementById('hireId').value.trim();
+      const phone = document.getElementById('hirePhone').value.trim();
+      const dob = document.getElementById('hireDob').value;
+      const hireDate = document.getElementById('hireDate').value;
+      const dept = document.getElementById('hireDept').value;
+      const position = document.getElementById('hirePosition').value;
+      if (!id || !dept || !position) return showAdminMsg('이름, 부서, 직급은 필수입니다.', 'error');
+
+      // ACCOUNTS에 추가 (없는 경우에만)
+      if (!ACCOUNTS[id]) {
+        ACCOUNTS[id] = '0000';
+        ACCOUNT_TYPES[id] = 'hq';
+        if (!ACCOUNT_SETTINGS.order.includes(id)) ACCOUNT_SETTINGS.order.push(id);
+        await saveAccountsToFirestore();
+        await saveAccountTypes();
+        await saveAccountSettings();
+      }
+      // HQ_EMPLOYEES에 추가
+      const exists = HQ_EMPLOYEES.findIndex(e => e.id === id);
+      const emp = { id, name: id, phone, dob, hireDate, dept, position, status: '재직' };
+      if (exists >= 0) HQ_EMPLOYEES[exists] = emp;
+      else HQ_EMPLOYEES.push(emp);
+      const ok = await saveHQEmployeesToFirestore();
+      showAdminMsg(ok ? '"' + id + '" 입사 등록이 완료되었습니다.' : '저장 실패.', ok ? 'success' : 'error');
+      document.getElementById('hireModal').remove();
+      render();
+    }
+
+    function openEditEmployeeForm(empId) {
+      const emp = HQ_EMPLOYEES.find(function(e){ return e.id === empId; });
+      if (!emp) return;
+      const modal = document.createElement('div');
+      modal.id = 'editEmpModal';
+      modal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm';
+      modal.innerHTML = '<div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">' +
+        '<div class="flex items-center justify-between mb-2"><h3 class="text-sm font-black">직원 정보 수정 — ' + emp.name + '</h3><button onclick="document.getElementById(\'editEmpModal\').remove()" class="text-neutral-400 hover:text-black"><i data-lucide="x" class="w-4 h-4"></i></button></div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div><label class="text-[9px] font-black text-neutral-400 ml-1">이름</label><input id="eeId" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (emp.name||'') + '" /></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 ml-1">전화번호</label><input id="eePhone" type="tel" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (emp.phone||'') + '" placeholder="010-0000-0000" oninput="var v=this.value.replace(/[^0-9]/g,\'\');if(v.length<=3)this.value=v;else if(v.length<=7)this.value=v.slice(0,3)+\'-\'+v.slice(3);else this.value=v.slice(0,3)+\'-\'+v.slice(3,7)+\'-\'+v.slice(7,11);" /></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 ml-1">생년월일</label><input id="eeDob" type="date" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (emp.dob||'') + '" /></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 ml-1">입사일</label><input id="eeHireDate" type="date" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (emp.hireDate||'') + '" /></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 ml-1">부서</label>' +
+          '<select id="eeDept" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1">' +
+          ['경영','R&D','생산본부','임가공팀','포장출하팀','기술지원팀','사업본부','경영지원실','브랜드전략팀','기술영업팀'].map(function(d){ return '<option value="' + d + '"' + (d===emp.dept?' selected':'') + '>' + d + '</option>'; }).join('') +
+          '</select></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 ml-1">직급</label>' +
+          '<select id="eePosition" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1">' +
+          ['사원','프로','팀장','실장','이사','대표이사'].map(function(p){ return '<option value="' + p + '"' + (p===emp.position?' selected':'') + '>' + p + '</option>'; }).join('') +
+          '</select></div>' +
+          '<div class="col-span-2"><label class="text-[9px] font-black text-neutral-400 ml-1">재직 상태</label>' +
+          '<select id="eeStatus" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1">' +
+          ['재직','육아휴직','휴직','퇴직'].map(function(s){ return '<option value="' + s + '"' + (s===emp.status?' selected':'') + '>' + s + '</option>'; }).join('') +
+          '</select></div>' +
+        '</div>' +
+        '<button onclick="submitEditEmployee(\'' + empId + '\')" class="w-full h-11 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800">수정 완료</button>' +
+      '</div>';
+      document.body.appendChild(modal);
+      lucide.createIcons();
+    }
+
+    async function submitEditEmployee(empId) {
+      const idx = HQ_EMPLOYEES.findIndex(function(e){ return e.id === empId; });
+      if (idx < 0) return;
+      const newName = document.getElementById('eeId').value.trim();
+      HQ_EMPLOYEES[idx].name = newName || HQ_EMPLOYEES[idx].name;
+      HQ_EMPLOYEES[idx].id = HQ_EMPLOYEES[idx].name;
+      HQ_EMPLOYEES[idx].phone = document.getElementById('eePhone').value.trim();
+      HQ_EMPLOYEES[idx].dob = document.getElementById('eeDob').value;
+      HQ_EMPLOYEES[idx].hireDate = document.getElementById('eeHireDate').value;
+      HQ_EMPLOYEES[idx].dept = document.getElementById('eeDept').value;
+      HQ_EMPLOYEES[idx].position = document.getElementById('eePosition').value;
+      HQ_EMPLOYEES[idx].status = document.getElementById('eeStatus').value;
+      const ok = await saveHQEmployeesToFirestore();
+      showAdminMsg(ok ? '"' + HQ_EMPLOYEES[idx].name + '" 정보가 수정되었습니다.' : '저장 실패.', ok ? 'success' : 'error');
+      document.getElementById('editEmpModal').remove();
+      render();
+    }
+
+    async function updateEmployeePosition(empId, newPosition) {
+      const idx = HQ_EMPLOYEES.findIndex(e => e.id === empId);
+      if (idx < 0) return;
+      HQ_EMPLOYEES[idx].position = newPosition;
+      const ok = await saveHQEmployeesToFirestore();
+      showAdminMsg(ok ? '"' + empId + '" 직급이 [' + newPosition + ']으로 변경되었습니다.' : '저장 실패.', ok ? 'success' : 'error');
+      render();
+    }
+
+    async function updateEmployeeStatus(empId, newStatus) {
+      const idx = HQ_EMPLOYEES.findIndex(e => e.id === empId);
+      if (idx < 0) return;
+      HQ_EMPLOYEES[idx].status = newStatus;
+      const ok = await saveHQEmployeesToFirestore();
+      showAdminMsg(ok ? '"' + empId + '" 상태가 변경되었습니다.' : '저장 실패.', ok ? 'success' : 'error');
+      render();
     }
 
     async function addAccount(name, password, type, manager) {
@@ -1005,11 +1369,18 @@
     }
 
     function handleAdminEntry() {
+      const uType = ACCOUNT_TYPES[state.currentUser] || '';
+      // 지사/대리점 계정: 비밀번호 없이 바로 제한 어드민 진입
+      if (uType === 'branch' || uType === 'dealer') {
+        setState({ currentView: 'admin' });
+        return;
+      }
+      // 본사 어드민: ADMIN_PASSWORD 확인
       if (!ADMIN_PASSWORD) {
         const newPw = prompt('관리자 비밀번호가 설정되어 있지 않습니다.\n새 관리자 비밀번호를 설정하세요:');
         if (!newPw || !newPw.trim()) return;
         ADMIN_PASSWORD = newPw.trim();
-        saveAdminPasswordToFirestore();
+        saveAdminPasswordToFirestore().catch(e => console.warn('admin pw save:', e));
         setState({ currentView: 'admin', adminTab: 'accounts' });
         loadRegistrationRequests();
         return;
@@ -1069,6 +1440,213 @@
       catch (e) { console.error('Save branches error:', e); return false; }
     }
 
+    // ===== 알림 시스템 =====
+    async function pushNotification(message, type) {
+      try {
+        const { db, collection, addDoc, serverTimestamp } = window.OSKA_DB;
+        await addDoc(collection(db, 'works_notifications'), {
+          message, type: type || 'info', read: false, createdAt: serverTimestamp()
+        });
+      } catch(e) { console.warn('pushNotification error:', e); }
+    }
+
+    // ===== 비밀번호 찾기 (Master 어드민 수동 처리 방식) =====
+    function openPasswordResetModal() {
+      const existing = document.getElementById('pwResetModal');
+      if (existing) existing.remove();
+      const modal = document.createElement('div');
+      modal.id = 'pwResetModal';
+      modal.className = 'fixed inset-0 z-[300] flex items-center justify-center bg-black/40 backdrop-blur-sm';
+      modal.innerHTML = `
+        <div class="bg-white rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+              <i data-lucide="key-round" class="w-5 h-5 text-amber-500"></i>
+              <h3 class="text-base font-black">비밀번호 찾기</h3>
+            </div>
+            <button onclick="document.getElementById('pwResetModal').remove()" class="text-neutral-400 hover:text-black">
+              <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+          </div>
+          <div class="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-4 text-[10px] text-amber-700">
+            요청이 접수되면 본사 관리자에게 알림이 전달됩니다. 관리자가 확인 후 등록된 연락처로 임시 비밀번호를 전달해드립니다.
+          </div>
+          <div class="space-y-3">
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">아이디 *</label>
+              <input type="text" id="pwResetId" class="w-full h-10 px-3 bg-white border border-neutral-200 rounded-lg font-bold text-sm focus:border-black outline-none mt-1" placeholder="로그인 아이디" autocomplete="off" />
+            </div>
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">이름 *</label>
+              <input type="text" id="pwResetName" class="w-full h-10 px-3 bg-white border border-neutral-200 rounded-lg font-bold text-sm focus:border-black outline-none mt-1" placeholder="본인 이름" autocomplete="off" />
+            </div>
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">연락처 *</label>
+              <input type="tel" id="pwResetPhone" class="w-full h-10 px-3 bg-white border border-neutral-200 rounded-lg font-bold text-sm focus:border-black outline-none mt-1" placeholder="010-0000-0000" autocomplete="off" />
+            </div>
+            <div>
+              <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest">메모 (선택)</label>
+              <textarea id="pwResetMemo" rows="2" class="w-full px-3 py-2 bg-white border border-neutral-200 rounded-lg font-bold text-sm focus:border-black outline-none mt-1" placeholder="추가 정보가 있으면 입력"></textarea>
+            </div>
+          </div>
+          <div class="flex gap-2 mt-5">
+            <button onclick="document.getElementById('pwResetModal').remove()" class="flex-1 h-10 border border-neutral-200 rounded-lg text-[11px] font-black text-neutral-400 hover:border-black hover:text-black transition-all">취소</button>
+            <button onclick="submitPasswordReset()" class="flex-1 h-10 bg-amber-500 text-white rounded-lg text-[11px] font-black hover:bg-amber-600 transition-all">요청 접수</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(modal);
+      if (window.lucide) lucide.createIcons();
+    }
+
+    async function submitPasswordReset() {
+      const id = document.getElementById('pwResetId')?.value.trim();
+      const name = document.getElementById('pwResetName')?.value.trim();
+      const phone = document.getElementById('pwResetPhone')?.value.trim();
+      const memo = document.getElementById('pwResetMemo')?.value.trim() || '';
+      if (!id) { alert('아이디를 입력하세요.'); return; }
+      if (!name) { alert('이름을 입력하세요.'); return; }
+      if (!phone) { alert('연락처를 입력하세요.'); return; }
+      try {
+        const { db, collection, addDoc, serverTimestamp } = window.OSKA_DB;
+        await addDoc(collection(db, 'works_password_reset_requests'), {
+          id, name, phone, memo, status: 'pending', createdAt: serverTimestamp()
+        });
+        // Master 어드민에게 알림
+        await pushNotification('[비밀번호 찾기] ' + name + ' (' + id + ') · ' + phone, 'password_reset');
+        document.getElementById('pwResetModal')?.remove();
+        alert('✅ 비밀번호 찾기 요청이 접수되었습니다.\n본사 관리자 확인 후 등록하신 연락처(' + phone + ')로 임시 비밀번호를 전달드립니다.');
+      } catch(e) {
+        console.error('Password reset request error:', e);
+        alert('요청 접수 실패: ' + e.message);
+      }
+    }
+
+    // #28 수신 대상 필터 — 내가 이 알림을 받아야 하는가?
+    function isNotifForMe(n) {
+      const myName = state.currentUser || '';
+      const myType = (state.currentUser === 'Master') ? 'hq' : (ACCOUNT_TYPES[state.currentUser] || '');
+      // 1) 특정인 지정 (이름) — 정확히 나일 때만
+      if (n.recipientId && n.recipientId !== 'hq' && n.recipientId !== '' && n.recipientId !== myName) return false;
+      // 2) 'hq' 지정 — 본사 타입만
+      if (n.recipientId === 'hq' && myType !== 'hq') return false;
+      // 3) recipientTypes 배열 지정 — 내 타입이 포함되어야 함
+      if (Array.isArray(n.recipientTypes) && n.recipientTypes.length > 0) {
+        if (!n.recipientTypes.includes(myType)) return false;
+      }
+      return true;
+    }
+
+    function subscribeNotifications() {
+      try {
+        const { db, collection, query, orderBy, onSnapshot } = window.OSKA_DB;
+        const q = query(collection(db, 'works_notifications'), orderBy('createdAt', 'desc'));
+        onSnapshot(q, snap => {
+          const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          // #28 내 타입/이름에 해당하는 알림만 보관
+          NOTIFICATIONS = all.filter(isNotifForMe);
+          // 알림 벨 업데이트만 (render 전체 안 부름)
+          const unread = NOTIFICATIONS.filter(n => !n.read).length;
+          const bell = document.getElementById('notifBell');
+          if (bell) {
+            const badge = bell.querySelector('.notif-badge');
+            if (badge) badge.textContent = unread > 0 ? (unread > 9 ? '9+' : unread) : '';
+            if (badge) badge.style.display = unread > 0 ? 'flex' : 'none';
+          }
+        });
+      } catch(e) { console.warn('subscribeNotifications error:', e); }
+    }
+
+    async function markAllNotifRead() {
+      try {
+        const { db, doc, updateDoc } = window.OSKA_DB;
+        // NOTIFICATIONS 는 이미 내 수신분만 필터된 상태 → 이대로 읽음 처리
+        const unread = NOTIFICATIONS.filter(n => !n.read);
+        await Promise.all(unread.map(n => updateDoc(doc(db, 'works_notifications', n.id), { read: true })));
+        NOTIFICATIONS.forEach(n => n.read = true);
+        setState({ notifOpen: !state.notifOpen });
+      } catch(e) { setState({ notifOpen: !state.notifOpen }); }
+    }
+
+    // 담당자 추가 요청 저장/로드
+    async function saveStaffRequests() {
+      try {
+        const { db, appId, doc, updateDoc } = window.OSKA_DB;
+        const ref = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+        await updateDoc(ref, { staffRequests: STAFF_REQUESTS });
+        return true;
+      } catch(e) {
+        console.error('saveStaffRequests error:', e);
+        // 조용히 묻지 않고 사용자에게 알림 (이 실패가 전화번호 소실 원인)
+        alert('⚠️ 담당자 요청 저장 실패: ' + e.message + '\n다시 시도해주세요.');
+        return false;
+      }
+    }
+
+    async function saveHQEmployeesToFirestore() {
+      const { db, appId, doc, updateDoc } = window.OSKA_DB;
+      const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+      try { await updateDoc(configRef, { hqEmployees: HQ_EMPLOYEES }); return true; }
+      catch (e) { console.error('Save hqEmployees error:', e); return false; }
+    }
+
+    async function loadLoginLogs() {
+      const container = document.getElementById('loginLogsContainer');
+      if (!container) return;
+      container.innerHTML = '<p class="text-[10px] text-neutral-300 text-center py-2">로딩 중...</p>';
+      try {
+        const { db, appId, collection, getDocs, query, orderBy } = window.OSKA_DB;
+        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'login_logs'), orderBy('loginAt', 'desc'));
+        const snap = await getDocs(q);
+        if (snap.empty) { container.innerHTML = '<p class="text-[10px] text-neutral-300 text-center py-4">기록 없음</p>'; return; }
+        const rows = snap.docs.slice(0, 50).map(function(d) {
+          const data = d.data();
+          const ts = data.loginAt ? new Date(data.loginAt.seconds * 1000) : new Date();
+          const timeStr = ts.toLocaleString('ko-KR', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'});
+          return '<div class="flex items-center justify-between py-1.5 border-b border-neutral-100 last:border-0">' +
+            '<div><span class="text-[10px] font-black">' + (data.account||'-') + '</span>' +
+            '<span class="text-[9px] text-neutral-400 ml-2">' + (data.browser||'-') + ' · ' + (data.device||'-') + '</span></div>' +
+            '<span class="text-[9px] text-neutral-400">' + timeStr + '</span>' +
+          '</div>';
+        }).join('');
+        container.innerHTML = rows;
+      } catch(e) { container.innerHTML = '<p class="text-[10px] text-red-400 text-center py-4">로드 실패: ' + e.message + '</p>'; }
+    }
+
+    async function saveAdminAccountsToFirestore() {
+      const { db, appId, doc, updateDoc } = window.OSKA_DB;
+      const configRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config');
+      try { await updateDoc(configRef, { adminAccounts: ADMIN_ACCOUNTS }); return true; }
+      catch (e) { console.error('Save adminAccounts error:', e); return false; }
+    }
+
+    async function addAdminAccount() {
+      const input = document.getElementById('newAdminAccount');
+      const name = input ? input.value.trim() : '';
+      if (!name) return showAdminMsg('계정 ID를 입력하세요.', 'error');
+      if (ADMIN_ACCOUNTS.includes(name)) return showAdminMsg(`"${name}"은 이미 어드민 계정입니다.`, 'error');
+      // 관리자 비밀번호 확인
+      const pwInput = document.getElementById('adminAccountPwConfirm');
+      const pw = pwInput ? pwInput.value : '';
+      if (!ADMIN_PASSWORD) return showAdminMsg('관리자 비밀번호가 설정되지 않았습니다. 먼저 관리자 비밀번호를 설정하세요.', 'error');
+      if (pw !== ADMIN_PASSWORD) return showAdminMsg('관리자 비밀번호가 올바르지 않습니다.', 'error');
+      ADMIN_ACCOUNTS.push(name);
+      const ok = await saveAdminAccountsToFirestore();
+      showAdminMsg(ok ? `"${name}" 어드민 접근이 추가되었습니다.` : '저장 실패.', ok ? 'success' : 'error');
+      if (input) input.value = '';
+      if (pwInput) pwInput.value = '';
+      render();
+    }
+
+    async function removeAdminAccount(name) {
+      if (name === 'Master') return showAdminMsg('Master 계정은 제거할 수 없습니다.', 'error');
+      ADMIN_ACCOUNTS = ADMIN_ACCOUNTS.filter(a => a !== name);
+      if (!ADMIN_ACCOUNTS.includes('Master')) ADMIN_ACCOUNTS.unshift('Master');
+      const ok = await saveAdminAccountsToFirestore();
+      showAdminMsg(ok ? `"${name}" 어드민 접근이 제거되었습니다.` : '저장 실패.', ok ? 'success' : 'error');
+      render();
+    }
+
     // 담당 지역 설정에 사용할 전체 지역 목록
     const ALL_REGIONS = ['서울','부산','대구','인천','광주','대전','울산','세종','경기','강원','충북','충남','전북','전남','경북','경남','제주'];
 
@@ -1092,11 +1670,21 @@
       render();
     }
 
+    async function changeBranchStatus(branchName, status) {
+      if (!BRANCHES[branchName]) return;
+      BRANCHES[branchName].status = status;
+      const ok = await saveBranchesToFirestore();
+      const label = status === 'active' ? '운영중' : status === 'dormant' ? '휴면' : '폐지';
+      showAdminMsg(ok ? `"${branchName}" 상태가 [${label}]으로 변경되었습니다.` : '저장 실패.', ok ? 'success' : 'error');
+      render();
+    }
+
     async function addBranch(name, type, bizNumber, address, email, phone, ownerName) {
       if (!name || !type) return showAdminMsg('지사명과 유형을 입력하세요.', 'error');
       if (BRANCHES[name]) return showAdminMsg(`"${name}"은(는) 이미 존재합니다.`, 'error');
       BRANCHES[name] = {
         type: type || 'branch',
+        status: 'active',
         bizNumber: bizNumber || '',
         address: address || '',
         email: email || '',
@@ -1162,6 +1750,244 @@
     }
 
     // ===== 관리자 패널 렌더링 =====
+    function renderProfile() {
+      // 현재 로그인 정보 파악
+      const userId = state.currentUser;
+      const userName = ACCOUNT_MANAGERS[userId] || userId;
+      const userType = ACCOUNT_TYPES[userId] || 'branch';
+      const typeLabel = userType === 'hq' ? '본사' : userType === 'dealer' ? '대리점' : '지사';
+
+      // BRANCHES.staff 여부 파악 (지사 직원 개별 로그인)
+      let staffEntry = null;
+      let staffBranchName = null;
+      Object.entries(BRANCHES).forEach(([bName, bData]) => {
+        (bData.staff || []).forEach(s => {
+          if (s.name === userName && bName === userId) { staffEntry = s; staffBranchName = bName; }
+        });
+      });
+
+      return `
+        <div class="min-h-screen bg-neutral-50 animate-fade-in">
+          <nav class="fixed w-full top-0 z-[60] bg-white border-b border-neutral-200 h-16 flex items-center px-8 justify-between shadow-sm">
+            <div class="flex items-center gap-4">
+              <button onclick="setState({currentView:'dashboard'})" class="hover:opacity-70 transition-opacity">
+                <img src="assets/오스카CI_04LogoBLACK_1.png" alt="OSKA" class="h-5 object-contain" onerror="this.style.display='none'">
+              </button>
+              <span class="font-black text-xs tracking-widest uppercase text-neutral-600">내 정보</span>
+            </div>
+            <button onclick="setState({currentView:'dashboard'})" class="group flex items-center gap-2 text-[10px] font-black text-neutral-400 hover:text-black transition-all border border-neutral-200 px-3 py-1.5 rounded-lg hover:bg-neutral-50">
+              <i data-lucide="arrow-left" class="w-3.5 h-3.5"></i> 대시보드
+            </button>
+          </nav>
+          <main class="pt-24 pb-20 max-w-lg mx-auto px-6">
+            <div class="mb-8">
+              <h1 class="text-3xl font-black tracking-tighter">내 정보</h1>
+              <p class="text-sm text-neutral-400 mt-1">개인 정보 및 비밀번호 관리</p>
+            </div>
+
+            <!-- 기본 정보 (읽기 전용) -->
+            <div class="bg-white rounded-2xl border border-neutral-200 p-6 mb-4 shadow-sm">
+              <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em] mb-4">
+                <i data-lucide="user-circle" class="w-3.5 h-3.5 inline mr-1.5"></i>기본 정보
+              </h3>
+              <div class="space-y-3">
+                <div class="flex items-center justify-between py-2 border-b border-neutral-100">
+                  <span class="text-[10px] font-black text-neutral-400">계정 ID</span>
+                  <span class="text-sm font-black">${userId}</span>
+                </div>
+                <div class="flex items-center justify-between py-2 border-b border-neutral-100">
+                  <span class="text-[10px] font-black text-neutral-400">이름</span>
+                  <span class="text-sm font-bold">${userName}</span>
+                </div>
+                <div class="flex items-center justify-between py-2">
+                  <span class="text-[10px] font-black text-neutral-400">소속</span>
+                  <span class="text-[11px] font-black px-2 py-1 rounded bg-neutral-100 text-neutral-700">${typeLabel} ${staffBranchName ? '/ ' + staffBranchName : ''}</span>
+                </div>
+              </div>
+              <p class="text-[9px] text-neutral-300 mt-3">이름·소속은 관리자만 변경할 수 있습니다.</p>
+            </div>
+
+            <!-- 연락처 수정 -->
+            <div class="bg-white rounded-2xl border border-neutral-200 p-6 mb-4 shadow-sm">
+              <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em] mb-4">
+                <i data-lucide="phone" class="w-3.5 h-3.5 inline mr-1.5"></i>연락처 수정
+              </h3>
+              <div class="space-y-3 mb-4">
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">전화번호</label>
+                  <input id="profilePhone" type="tel" class="w-full h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all mt-1"
+                    value="${staffEntry ? (staffEntry.phone || '') : ''}" placeholder="010-0000-0000"
+                    oninput="var v=this.value.replace(/[^0-9]/g,'');if(v.length<=3)this.value=v;else if(v.length<=7)this.value=v.slice(0,3)+'-'+v.slice(3);else this.value=v.slice(0,3)+'-'+v.slice(3,7)+'-'+v.slice(7,11);" />
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">이메일</label>
+                  <input id="profileEmail" type="text" autocomplete="off" class="w-full h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all mt-1"
+                    value="${staffEntry ? (staffEntry.email || '') : ''}" placeholder="example@email.com" />
+                </div>
+              </div>
+              <button onclick="saveProfileContact()" class="w-full h-11 bg-neutral-900 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-black transition-all">연락처 저장</button>
+            </div>
+
+            <!-- 비밀번호 변경 -->
+            <div class="bg-white rounded-2xl border border-neutral-200 p-6 shadow-sm">
+              <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em] mb-4">
+                <i data-lucide="lock" class="w-3.5 h-3.5 inline mr-1.5"></i>비밀번호 변경
+              </h3>
+              <div class="space-y-3 mb-4">
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">현재 비밀번호</label>
+                  <input id="profileCurPw" type="password" class="w-full h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all mt-1" placeholder="현재 비밀번호" />
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">새 비밀번호</label>
+                  <input id="profileNewPw" type="password" class="w-full h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all mt-1" placeholder="새 비밀번호" />
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">새 비밀번호 확인</label>
+                  <input id="profileNewPw2" type="password" class="w-full h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all mt-1" placeholder="새 비밀번호 다시 입력" />
+                </div>
+              </div>
+              <div id="profileMsg" class="hidden text-[10px] font-bold mb-3 px-3 py-2 rounded-lg"></div>
+              <button onclick="saveProfilePassword()" class="w-full h-11 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800 transition-all">비밀번호 변경</button>
+            </div>
+
+            ${userId === MASTER_ACCOUNT.id ? `
+            <!-- 마스터 계정 비밀번호 변경 (Master 전용) -->
+            <div class="bg-white rounded-2xl border border-red-200 p-6 shadow-sm">
+              <h3 class="text-[10px] font-black text-red-500 uppercase tracking-[0.3em] mb-4">
+                <i data-lucide="key" class="w-3.5 h-3.5 inline mr-1.5"></i>마스터 계정 비밀번호 변경
+              </h3>
+              <div class="space-y-3 mb-4">
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">현재 마스터 비밀번호</label>
+                  <input id="masterCurPw" type="password" class="password-input w-full h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-red-400 outline-none transition-all mt-1" placeholder="현재 마스터 비밀번호" />
+                </div>
+                <div>
+                  <label class="text-[9px] font-black text-neutral-400 uppercase tracking-widest ml-1">새 마스터 비밀번호</label>
+                  <input id="masterNewPw" type="password" class="password-input w-full h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-red-400 outline-none transition-all mt-1" placeholder="새 마스터 비밀번호" />
+                </div>
+              </div>
+              <div id="masterMsg" class="hidden text-[10px] font-bold mb-3 px-3 py-2 rounded-lg"></div>
+              <button onclick="saveMasterPassword()" class="w-full h-11 bg-red-500 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-all">마스터 비밀번호 변경</button>
+              <p class="text-[9px] text-neutral-300 mt-2">⚠ 마스터 비밀번호 변경 시 즉시 적용됩니다.</p>
+            </div>` : ''}
+          </main>
+        </div>`;
+    }
+
+    async function saveMasterPassword() {
+      const curPw = document.getElementById('masterCurPw').value;
+      const newPw = document.getElementById('masterNewPw').value;
+      const msgEl = document.getElementById('masterMsg');
+      if (!curPw || !newPw) return showMasterMsg('모든 항목을 입력하세요.', 'error');
+      if (curPw !== MASTER_ACCOUNT.pw) return showMasterMsg('현재 비밀번호가 올바르지 않습니다.', 'error');
+      if (newPw.length < 4) return showMasterMsg('비밀번호는 4자리 이상이어야 합니다.', 'error');
+      MASTER_ACCOUNT.pw = newPw;
+      try {
+        const { db, appId, doc, updateDoc } = window.OSKA_DB;
+        await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'config'), {
+          masterAccount: { id: MASTER_ACCOUNT.id, pw: MASTER_ACCOUNT.pw, type: MASTER_ACCOUNT.type, manager: MASTER_ACCOUNT.manager }
+        });
+        showMasterMsg('✅ 마스터 비밀번호가 변경되었습니다.', 'success');
+        document.getElementById('masterCurPw').value = '';
+        document.getElementById('masterNewPw').value = '';
+      } catch(e) { showMasterMsg('저장 실패: ' + e.message, 'error'); }
+    }
+
+    function showMasterMsg(msg, type) {
+      const el = document.getElementById('masterMsg');
+      if (!el) return;
+      el.textContent = msg;
+      el.className = 'text-[10px] font-bold mb-3 px-3 py-2 rounded-lg ' +
+        (type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200');
+    }
+
+    async function saveProfileContact() {
+      const phone = document.getElementById('profilePhone').value.trim();
+      const email = document.getElementById('profileEmail').value.trim();
+      const userId = state.currentUser;
+      const userName = ACCOUNT_MANAGERS[userId] || userId;
+
+      // BRANCHES.staff에서 해당 직원 찾아서 업데이트
+      let updated = false;
+      Object.entries(BRANCHES).forEach(([bName, bData]) => {
+        (bData.staff || []).forEach(s => {
+          if (s.name === userName && bName === userId) {
+            s.phone = phone; s.email = email; updated = true;
+          }
+        });
+      });
+
+      if (updated) {
+        const ok = await saveBranchesToFirestore();
+        const msg = document.getElementById('profileMsg');
+        showProfileMsg(ok ? '연락처가 저장되었습니다.' : '저장 실패. 다시 시도해주세요.', ok ? 'success' : 'error');
+      } else {
+        showProfileMsg('연락처 정보를 업데이트하려면 관리자에게 BRANCHES 직원 목록 등록을 요청하세요.', 'info');
+      }
+    }
+
+    async function saveProfilePassword() {
+      const curPw = document.getElementById('profileCurPw').value;
+      const newPw = document.getElementById('profileNewPw').value;
+      const newPw2 = document.getElementById('profileNewPw2').value;
+      const userId = state.currentUser;
+
+      if (!curPw || !newPw || !newPw2) return showProfileMsg('모든 항목을 입력하세요.', 'error');
+      if (newPw !== newPw2) return showProfileMsg('새 비밀번호가 일치하지 않습니다.', 'error');
+      if (newPw.length < 4) return showProfileMsg('비밀번호는 4자리 이상이어야 합니다.', 'error');
+
+      // 현재 비밀번호 확인 (ACCOUNTS 또는 BRANCHES.staff)
+      const currentPw = ACCOUNTS[userId];
+      let staffIdx = -1; let staffBranch = null;
+      if (!currentPw) {
+        // BRANCHES.staff 확인
+        const userName = ACCOUNT_MANAGERS[userId] || userId;
+        Object.entries(BRANCHES).forEach(([bName, bData]) => {
+          (bData.staff || []).forEach((s, i) => {
+            if (s.name === userName && bName === userId) { staffIdx = i; staffBranch = bName; }
+          });
+        });
+      }
+
+      const storedPw = currentPw || (staffBranch ? BRANCHES[staffBranch].staff[staffIdx]?.pw : null);
+      if (!storedPw || storedPw !== curPw) return showProfileMsg('현재 비밀번호가 올바르지 않습니다.', 'error');
+
+      // 비밀번호 변경 저장
+      let ok = false;
+      if (currentPw) {
+        ACCOUNTS[userId] = newPw;
+        ok = await saveAccountsToFirestore();
+      } else if (staffBranch !== null && staffIdx >= 0) {
+        BRANCHES[staffBranch].staff[staffIdx].pw = newPw;
+        ok = await saveBranchesToFirestore();
+      }
+
+      if (ok) {
+        showProfileMsg('✅ 비밀번호가 변경되었습니다.', 'success');
+        document.getElementById('profileCurPw').value = '';
+        document.getElementById('profileNewPw').value = '';
+        document.getElementById('profileNewPw2').value = '';
+        // sessionStorage도 업데이트
+        try {
+          const saved = sessionStorage.getItem('oska_session');
+          if (saved) sessionStorage.setItem('oska_session', saved);
+        } catch(e) {}
+      } else {
+        showProfileMsg('저장 실패. 다시 시도해주세요.', 'error');
+      }
+    }
+
+    function showProfileMsg(msg, type) {
+      const el = document.getElementById('profileMsg');
+      if (!el) return;
+      el.textContent = msg;
+      el.className = 'text-[10px] font-bold mb-3 px-3 py-2 rounded-lg ' +
+        (type === 'success' ? 'bg-green-50 text-green-700 border border-green-200' :
+         type === 'info' ? 'bg-blue-50 text-blue-700 border border-blue-200' :
+         'bg-red-50 text-red-700 border border-red-200');
+    }
+
     function renderAdmin() {
       const allBranches = getOrderedBranches(true);
 
@@ -1169,7 +1995,9 @@
         <div class="min-h-screen bg-neutral-50 animate-fade-in">
           <nav class="fixed w-full top-0 z-[60] bg-white border-b border-neutral-200 h-16 flex items-center px-8 justify-between shadow-sm">
             <div class="flex items-center gap-4">
-              <img src="assets/오스카CI_04LogoBLACK_1.png" alt="OSKA" class="h-5 object-contain" onerror="this.style.display='none'">
+              <button onclick="setState({currentView:'dashboard'})" class="hover:opacity-70 transition-opacity cursor-pointer">
+                <img src="assets/오스카CI_04LogoBLACK_1.png" alt="OSKA" class="h-5 object-contain" onerror="this.style.display='none'">
+              </button>
               <div class="flex items-center gap-2">
                 <span class="bg-blue-600 text-white text-[8px] font-black px-2 py-0.5 rounded tracking-widest uppercase">Admin</span>
                 <span class="font-black text-xs tracking-widest uppercase text-neutral-600">Management Console</span>
@@ -1188,22 +2016,58 @@
               </div>` : ''}
 
             <div class="flex gap-2 mb-8 flex-wrap">
-              <button class="admin-tab px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'accounts' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="accounts">
-                <i data-lucide="users" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>계정 관리
+              <button class="admin-tab px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'accounts' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="accounts">
+                <i data-lucide="building-2" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>본사 인력 관리
               </button>
-              <button class="admin-tab px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'branches' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="branches">
-                <i data-lucide="map-pin" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>지사 관리
+              <button class="admin-tab px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'branch_accounts' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="branch_accounts">
+                <i data-lucide="map-pin" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>지사 계정 관리
               </button>
-              <button class="admin-tab px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'registration' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="registration">
+              <button class="admin-tab px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'dealer_accounts' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="dealer_accounts">
+                <i data-lucide="store" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>대리점 계정 관리
+              </button>
+              <button class="admin-tab px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'registration' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="registration">
                 <i data-lucide="user-plus" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>등록 요청
-                ${state._regRequests && state._regRequests.filter(r => r.status === 'pending').length > 0 ? `<span class="ml-1 bg-red-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">${state._regRequests.filter(r => r.status === 'pending').length}</span>` : ''}
+                ${(function(){
+                  const pendingReg = (state._regRequests||[]).filter(r=>r.status==='pending').length;
+                  const pendingStaff = STAFF_REQUESTS.filter(r=>r.status==='pending').length;
+                  const total = pendingReg + pendingStaff;
+                  return total > 0 ? '<span class="ml-1 bg-red-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">' + total + '</span>' : '';
+                })()}
               </button>
-              <button class="admin-tab px-5 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'archive' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="archive">
-                <i data-lucide="archive" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>Archive 관리
+              <button class="admin-tab px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'forms_approval' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="forms_approval">
+                <i data-lucide="file-check" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>서식 승인
+                ${(function(){
+                  const cnt = (state._pendingForms||[]).length;
+                  return cnt > 0 ? '<span class="ml-1 bg-teal-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">' + cnt + '</span>' : '';
+                })()}
+              </button>
+              <button class="admin-tab px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'pw_reset' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="pw_reset">
+                <i data-lucide="key-round" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>비밀번호 찾기
+                ${(function(){
+                  const cnt = (state._pendingPwResets||[]).length;
+                  return cnt > 0 ? '<span class="ml-1 bg-amber-500 text-white text-[8px] px-1.5 py-0.5 rounded-full font-black">' + cnt + '</span>' : '';
+                })()}
+              </button>
+              <button class="admin-tab px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'login_logs' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="login_logs">
+                <i data-lucide="activity" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>로그인 기록
+              </button>
+              <button class="admin-tab px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'org_rnr' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="org_rnr">
+                <i data-lucide="network" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>조직도 관리
+              </button>
+              <button class="admin-tab px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${state.adminTab === 'archive' ? 'bg-black text-white shadow-lg' : 'bg-white text-neutral-400 border border-neutral-200 hover:border-black hover:text-black'}" data-tab="archive">
+                <i data-lucide="archive" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>Archive
               </button>
             </div>
 
-            ${state.adminTab === 'accounts' ? renderAdminAccounts(allBranches) : state.adminTab === 'branches' ? renderAdminBranches() : state.adminTab === 'registration' ? renderAdminRegistration() : renderAdminArchive()}
+            ${state.adminTab === 'accounts' ? renderAdminAccounts(allBranches) :
+              state.adminTab === 'branch_accounts' ? renderAdminBranchAccounts() :
+              state.adminTab === 'dealer_accounts' ? renderAdminDealerAccounts() :
+              state.adminTab === 'registration' ? renderAdminRegistration() :
+              state.adminTab === 'forms_approval' ? renderAdminFormsApproval() :
+              state.adminTab === 'pw_reset' ? renderAdminPasswordResets() :
+              state.adminTab === 'login_logs' ? renderAdminLoginLogs() :
+              state.adminTab === 'org_rnr' ? renderAdminOrgRNR() :
+              renderAdminArchive()}
           </main>
         </div>
       `;
@@ -1273,37 +2137,89 @@
 
       return `
         <div class="space-y-6">
-          <!-- 새 계정 추가 -->
-          <div class="bg-white rounded-2xl border border-neutral-200 p-6 shadow-sm">
-            <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em] mb-4">
-              <i data-lucide="user-plus" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>새 지사/대리점 추가
+          <!-- 본사 직원 (부서별 카드) -->
+          ${(function() {
+            const depts = {};
+            HQ_EMPLOYEES.forEach(function(e) {
+              if (!depts[e.dept]) depts[e.dept] = [];
+              depts[e.dept].push(e);
+            });
+            const positionOrder = ['대표이사','이사','실장','팀장','프로','사원'];
+            const statusBadge = function(s) {
+              return s === '재직' ? 'bg-green-50 text-green-600' : s === '육아휴직' ? 'bg-orange-50 text-orange-500' : s === '휴직' ? 'bg-yellow-50 text-yellow-600' : 'bg-neutral-100 text-neutral-400';
+            };
+            const deptCards = Object.entries(depts).map(function(entry) {
+              const deptName = entry[0]; const emps = entry[1];
+              const sorted = emps.slice().sort(function(a,b){ return positionOrder.indexOf(a.position) - positionOrder.indexOf(b.position); });
+              const rows = sorted.map(function(e) {
+                return '<div class="flex items-center justify-between py-2.5 border-b border-neutral-100 last:border-0 hover:bg-neutral-50 px-1 rounded-lg group">' +
+                  '<div class="flex items-center gap-3">' +
+                    '<div class="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center text-[9px] font-black text-neutral-600">' + (e.name ? e.name.slice(-1) : '?') + '</div>' +
+                    '<div>' +
+                      '<span class="text-[11px] font-black">' + e.name + '</span>' +
+                      '<span class="ml-1.5 text-[9px] font-bold text-neutral-500 border border-neutral-200 px-1.5 py-0.5 rounded">' + e.position + '</span>' +
+                      (e.phone ? '<span class="ml-1.5 text-[9px] text-neutral-400">' + e.phone + '</span>' : '') +
+                      '<span class="ml-1.5 text-[8px] px-1.5 py-0.5 rounded font-black ' + statusBadge(e.status) + '">' + (e.status || '재직') + '</span>' +
+                    '</div>' +
+                  '</div>' +
+                  '<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">' +
+                    '<button onclick="openEditEmployeeForm(\'' + e.id + '\')" class="h-7 px-2 bg-neutral-100 text-neutral-600 rounded-lg text-[8px] font-black hover:bg-neutral-200 transition-colors">수정</button>' +
+                    '<select onchange="updateEmployeePosition(\'' + e.id + '\', this.value)" class="h-7 px-2 text-[9px] font-black bg-white border border-neutral-200 rounded-lg focus:border-black outline-none cursor-pointer">' +
+                    ['사원','프로','팀장','실장','이사','대표이사'].map(function(p){ return '<option value="' + p + '"' + (e.position === p ? ' selected' : '') + '>' + p + '</option>'; }).join('') +
+                    '</select>' +
+                    '<select onchange="updateEmployeeStatus(\'' + e.id + '\', this.value)" class="h-7 px-2 text-[9px] font-black bg-white border border-neutral-200 rounded-lg focus:border-black outline-none cursor-pointer">' +
+                    ['재직','육아휴직','휴직','퇴직'].map(function(s){ return '<option value="' + s + '"' + (e.status === s ? ' selected' : '') + '>' + s + '</option>'; }).join('') +
+                    '</select>' +
+                  '</div>' +
+                '</div>';
+              }).join('');
+              return '<div class="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden mb-3">' +
+                '<div class="px-4 py-3 bg-neutral-50 border-b border-neutral-100 flex items-center justify-between">' +
+                  '<span class="text-[9px] font-black text-neutral-600 uppercase tracking-widest">' + deptName + ' (' + emps.length + '명)</span>' +
+                '</div>' +
+                '<div class="px-4">' + rows + '</div>' +
+              '</div>';
+            }).join('');
+            return '<div class="bg-white rounded-2xl border border-neutral-300 shadow-sm overflow-hidden mb-0">' +
+              '<div class="px-6 py-4 border-b border-neutral-100 flex items-center justify-between">' +
+                '<h3 class="text-[10px] font-black text-neutral-800 uppercase tracking-[0.3em] flex items-center gap-1.5"><i data-lucide="building-2" class="w-3.5 h-3.5"></i>본사 (' + HQ_EMPLOYEES.length + '명)</h3>' +
+                '<button onclick="openHireForm()" class="flex items-center gap-1.5 text-[10px] font-black px-3 py-2 bg-black text-white rounded-xl hover:bg-neutral-800 transition-all"><i data-lucide="user-plus" class="w-3 h-3"></i>입사 등록</button>' +
+              '</div>' +
+              '<div class="p-4 space-y-0">' + deptCards + '</div>' +
+            '</div>';
+          })()}
+
+          <!-- 어드민 접근 계정 관리 -->
+          <div class="bg-white rounded-2xl border border-blue-200 p-6 shadow-sm">
+            <h3 class="text-[10px] font-black text-blue-500 uppercase tracking-[0.3em] mb-4">
+              <i data-lucide="shield-check" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>어드민 접근 계정 관리
             </h3>
-            <div class="flex gap-3 mb-3">
-              <select id="newAccType" class="h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all cursor-pointer w-32">
-                <option value="hq">본사</option>
-                <option value="branch">지사</option>
-                <option value="dealer">대리점</option>
-              </select>
-              <input id="newAccName" type="text" placeholder="지사/대리점명" class="flex-1 h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all" />
-              <input id="newAccPw" type="text" placeholder="비밀번호 (숫자 4자리)" class="w-40 h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all" maxlength="10" />
+            <p class="text-[10px] text-neutral-400 mb-3 font-bold">아래 계정만 ADMIN 버튼을 볼 수 있습니다. Master는 항상 포함됩니다.</p>
+            <div class="flex flex-wrap gap-2 mb-4">
+              ${ADMIN_ACCOUNTS.map(a => '<span class="inline-flex items-center gap-1.5 text-[10px] font-black px-3 py-1.5 rounded-lg ' + (a === 'Master' ? 'bg-neutral-100 text-neutral-500' : 'bg-blue-50 text-blue-700') + '">' + a + (a !== 'Master' ? ' <button onclick="removeAdminAccount(\'' + a + '\')" class="text-blue-300 hover:text-red-500 transition-colors font-black">×</button>' : ' <span class="text-[8px] text-neutral-400">(고정)</span>') + '</span>').join('')}
+            </div>
+            <div class="flex gap-3 mb-2">
+              <input id="newAdminAccount" type="text" placeholder="추가할 계정 ID (예: 정진현)" class="flex-1 h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-blue-400 outline-none transition-all" />
             </div>
             <div class="flex gap-3">
-              <input id="newAccManager" type="text" placeholder="담당자 (예: 이범호 이사)" class="flex-1 h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none transition-all" />
-              <button id="btnAddAccount" class="h-11 px-6 bg-black text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-neutral-800 transition-all whitespace-nowrap">추가</button>
+              <input id="adminAccountPwConfirm" type="password" placeholder="관리자 비밀번호 입력" class="password-input flex-1 h-11 px-4 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-blue-400 outline-none transition-all" />
+              <button onclick="addAdminAccount()" class="h-11 px-5 bg-blue-500 text-white rounded-xl text-xs font-black uppercase tracking-widest hover:bg-blue-600 transition-all whitespace-nowrap">추가</button>
             </div>
-            <p class="text-[10px] text-neutral-400 mt-2 font-bold">
-              <span class="text-blue-500">지사</span>: 모든 기능 접근 가능 &nbsp;|&nbsp; <span class="text-purple-500">대리점</span>: Deck Management, 소비자단가표, 레퍼런스북 제한
-            </p>
+            <p class="text-[9px] text-neutral-400 mt-2">계정 추가 시 현재 관리자 비밀번호 확인이 필요합니다.</p>
           </div>
 
-          <!-- 본사 -->
-          ${renderCategorySection('본사', 'building-2', 'text-neutral-800', 'border-neutral-300', hqList, 'hq')}
-
-          <!-- 지사 -->
-          ${renderCategorySection('지사', 'map-pin', 'text-blue-600', 'border-blue-200', branchList, 'branch')}
-
-          <!-- 대리점 -->
-          ${renderCategorySection('대리점', 'store', 'text-purple-600', 'border-purple-200', dealerList, 'dealer')}
+          <!-- 로그인 기록 -->
+          <div class="bg-white rounded-2xl border border-neutral-200 p-6 shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em]">
+                <i data-lucide="activity" class="w-3.5 h-3.5 inline mr-1.5 -mt-0.5"></i>로그인 기록
+              </h3>
+              <button onclick="loadLoginLogs()" class="text-[9px] font-black text-neutral-400 hover:text-black border border-neutral-200 px-2 py-1 rounded-lg transition-colors">새로고침</button>
+            </div>
+            <div id="loginLogsContainer" class="space-y-2 max-h-48 overflow-y-auto">
+              <p class="text-[10px] text-neutral-300 text-center py-4">새로고침 버튼을 눌러 기록을 불러오세요.</p>
+            </div>
+          </div>
 
           <!-- 관리자 비밀번호 변경 -->
           <div class="bg-white rounded-2xl border border-amber-200 p-6 shadow-sm">
@@ -1372,20 +2288,101 @@
 
       try {
         const { db, doc, updateDoc } = window.OSKA_DB;
-        // 요청 상태 업데이트: status만 approved로 변경
-        // ID/PW는 본사에서 지사관리에서 별도 부여하므로 여기서는 상태만 변경
         const reqRef = doc(db, 'registration_requests', reqId);
         await updateDoc(reqRef, { status: 'approved', approvedAt: new Date().toISOString() });
-
-        // 로컬 상태 업데이트
         req.status = 'approved';
 
-        showAdminMsg(`"${req.companyName}" 등록 요청이 승인되었습니다. 지사관리에서 계정을 생성하세요.`, 'success');
+        // BRANCHES에 자동 등록 (지사/대리점)
+        const bType = req.companyType === 'dealer' ? 'dealer' : 'branch';
+        if (!BRANCHES[req.companyName]) {
+          BRANCHES[req.companyName] = {
+            type: bType, status: 'active',
+            bizNumber: req.bizNumber || '', address: [req.province, req.district, req.addressDetail].filter(Boolean).join(' '),
+            email: req.ownerEmail || '', phone: req.ownerPhone || '', ownerName: req.ownerName || '',
+            regions: [], staff: [], validFrom: ''
+          };
+          // ACCOUNTS에도 계정 추가 (비밀번호 0000)
+          if (!ACCOUNTS[req.companyName]) {
+            ACCOUNTS[req.companyName] = '0000';
+            ACCOUNT_TYPES[req.companyName] = bType;
+            if (!ACCOUNT_SETTINGS.order.includes(req.companyName)) ACCOUNT_SETTINGS.order.push(req.companyName);
+            await saveAccountsToFirestore();
+            await saveAccountTypes();
+            await saveAccountSettings();
+          }
+          await saveBranchesToFirestore();
+        }
+        // 알림 발송
+        await pushNotification('"' + req.companyName + '" 업체 등록이 승인되었습니다.', 'success');
+        showAdminMsg(`"${req.companyName}" 등록이 승인되었습니다. 계정(ID: ${req.companyName}, PW: 0000)이 자동 생성되었습니다.`, 'success');
         render();
       } catch(e) {
         console.error('Approve error:', e);
         showAdminMsg('승인 처리 중 오류 발생: ' + e.message, 'error');
       }
+    }
+
+    function openEditRegistration(reqId) {
+      const req = (state._regRequests || []).find(r => r.id === reqId);
+      if (!req) return;
+      const modal = document.createElement('div');
+      modal.id = 'editRegModal';
+      modal.className = 'fixed inset-0 z-[200] flex items-center justify-center bg-black/40 backdrop-blur-sm';
+      modal.innerHTML = '<div class="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 p-6 space-y-4 max-h-[90vh] overflow-y-auto">' +
+        '<div class="flex items-center justify-between mb-2"><h3 class="text-sm font-black">등록 정보 수정</h3><button onclick="document.getElementById(\'editRegModal\').remove()" class="text-neutral-400 hover:text-black"><i data-lucide="x" class="w-4 h-4"></i></button></div>' +
+        '<div class="grid grid-cols-2 gap-3">' +
+          '<div><label class="text-[9px] font-black text-neutral-400 ml-1">업체명</label><input id="erCompanyName" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (req.companyName||'') + '" /></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 ml-1">사업자번호</label><input id="erBizNumber" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (req.bizNumber||'') + '" placeholder="000-00-00000" oninput="var v=this.value.replace(/[^0-9]/g,\'\');if(v.length<=3)this.value=v;else if(v.length<=5)this.value=v.slice(0,3)+\'-\'+v.slice(3);else this.value=v.slice(0,3)+\'-\'+v.slice(3,5)+\'-\'+v.slice(5,10);" /></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 ml-1">대표자명</label><input id="erOwnerName" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (req.ownerName||'') + '" /></div>' +
+          '<div><label class="text-[9px] font-black text-neutral-400 ml-1">대표 전화</label><input id="erOwnerPhone" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (req.ownerPhone||'') + '" placeholder="010-0000-0000" oninput="var v=this.value.replace(/[^0-9]/g,\'\');if(v.length<=3)this.value=v;else if(v.length<=7)this.value=v.slice(0,3)+\'-\'+v.slice(3);else this.value=v.slice(0,3)+\'-\'+v.slice(3,7)+\'-\'+v.slice(7,11);" /></div>' +
+          '<div class="col-span-2"><label class="text-[9px] font-black text-neutral-400 ml-1">이메일</label><input id="erOwnerEmail" type="text" autocomplete="off" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (req.ownerEmail||'') + '" /></div>' +
+          (function(){
+            const provinces = Object.keys(REGIONS_DATA);
+            const provOpts = provinces.map(function(p){ return '<option value="' + p + '"' + (p===req.province?' selected':'') + '>' + p + '</option>'; }).join('');
+            const distOpts = (REGIONS_DATA[req.province]||[]).map(function(d){ return '<option value="' + d + '"' + (d===req.district?' selected':'') + '>' + d + '</option>'; }).join('');
+            return '<div><label class="text-[9px] font-black text-neutral-400 ml-1">시/도</label><select id="erProvince" onchange="var d=document.getElementById(\'erDistrict\');d.innerHTML=\'<option value=\\\'\\\'>선택</option>\'+(REGIONS_DATA[this.value]||[]).map(function(x){return\'<option>\'+x+\'</option>\';}).join(\'\');" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1"><option value="">선택</option>' + provOpts + '</select></div>' +
+                   '<div><label class="text-[9px] font-black text-neutral-400 ml-1">시/군/구</label><select id="erDistrict" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1"><option value="">선택</option>' + distOpts + '</select></div>';
+          })() +
+          '<div class="col-span-2"><label class="text-[9px] font-black text-neutral-400 ml-1">상세 주소</label><input id="erAddressDetail" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" value="' + (req.addressDetail||'') + '" /></div>' +
+        '</div>' +
+        '<div class="flex gap-3 pt-2">' +
+          '<button onclick="submitEditRegistration(\'' + reqId + '\')" class="flex-1 h-11 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800">수정 완료</button>' +
+          '<button onclick="document.getElementById(\'editRegModal\').remove()" class="flex-1 h-11 bg-neutral-100 text-neutral-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-200">취소</button>' +
+        '</div>' +
+      '</div>';
+      document.body.appendChild(modal);
+      lucide.createIcons();
+    }
+
+    async function submitEditRegistration(reqId) {
+      const req = (state._regRequests || []).find(r => r.id === reqId);
+      if (!req) return;
+      req.companyName = document.getElementById('erCompanyName').value.trim() || req.companyName;
+      req.bizNumber = document.getElementById('erBizNumber').value.trim();
+      req.ownerName = document.getElementById('erOwnerName').value.trim();
+      req.ownerPhone = document.getElementById('erOwnerPhone').value.trim();
+      req.ownerEmail = document.getElementById('erOwnerEmail').value.trim();
+      req.province = document.getElementById('erProvince').value.trim();
+      req.district = document.getElementById('erDistrict').value.trim();
+      req.addressDetail = document.getElementById('erAddressDetail').value.trim();
+      try {
+        const { db, doc, updateDoc } = window.OSKA_DB;
+        await updateDoc(doc(db, 'registration_requests', reqId), { companyName: req.companyName, bizNumber: req.bizNumber, ownerName: req.ownerName, ownerPhone: req.ownerPhone, ownerEmail: req.ownerEmail, province: req.province, district: req.district, addressDetail: req.addressDetail });
+        showAdminMsg('수정이 완료되었습니다. 내용을 확인 후 승인하세요.', 'success');
+        document.getElementById('editRegModal').remove();
+        render();
+      } catch(e) { showAdminMsg('수정 실패: ' + e.message, 'error'); }
+    }
+
+    async function deleteRegistrationRecord(reqId) {
+      if (!confirm('이 처리 내역을 삭제하시겠습니까?')) return;
+      try {
+        const { db, doc, deleteDoc } = window.OSKA_DB;
+        await deleteDoc(doc(db, 'registration_requests', reqId));
+        state._regRequests = (state._regRequests || []).filter(r => r.id !== reqId);
+        showAdminMsg('내역이 삭제되었습니다.', 'success');
+        render();
+      } catch(e) { showAdminMsg('삭제 실패: ' + e.message, 'error'); }
     }
 
     async function rejectRegistration(reqId) {
@@ -1415,14 +2412,57 @@
       }
     }
 
+    async function approveStaffRequest(reqIdx) {
+      const req = STAFF_REQUESTS[reqIdx];
+      if (!req) return;
+      // BRANCHES.staff에 추가
+      if (BRANCHES[req.branchName]) {
+        if (!BRANCHES[req.branchName].staff) BRANCHES[req.branchName].staff = [];
+        // staffPhone이 없으면 명시적으로 경고 (전화번호 소실 방지)
+        if (!req.staffPhone) console.warn('[approveStaffRequest] staffPhone 없음 — 요청 저장 시 실패했을 가능성:', req);
+        BRANCHES[req.branchName].staff.push({ id: req.staffName, pw: '0000', name: req.staffName, phone: req.staffPhone || '', email: '', position: req.position || '' });
+        await saveBranchesToFirestore();
+      }
+      // ACCOUNTS에도 추가
+      if (!ACCOUNTS[req.staffName]) {
+        ACCOUNTS[req.staffName] = '0000';
+        ACCOUNT_TYPES[req.staffName] = BRANCHES[req.branchName]?.type || 'branch';
+        if (!ACCOUNT_SETTINGS.order.includes(req.staffName)) ACCOUNT_SETTINGS.order.push(req.staffName);
+        await saveAccountsToFirestore(); await saveAccountTypes(); await saveAccountSettings();
+      }
+      STAFF_REQUESTS[reqIdx].status = 'approved';
+      await saveStaffRequests();
+      await pushNotification('"' + req.staffName + '" 담당자 등록이 완료되었습니다. (소속: ' + req.branchName + ', 초기 비밀번호: 0000)', 'success');
+      showAdminMsg('"' + req.staffName + '" 담당자 등록 완료. 초기 비밀번호: 0000', 'success');
+      render();
+    }
+
+    async function rejectStaffRequest(reqIdx) {
+      STAFF_REQUESTS[reqIdx].status = 'rejected';
+      await saveStaffRequests();
+      showAdminMsg('담당자 추가 요청이 거절되었습니다.', 'error');
+      render();
+    }
+
     function renderAdminRegistration() {
       const requests = state._regRequests || [];
       const pending = requests.filter(r => r.status === 'pending');
       const processed = requests.filter(r => r.status !== 'pending');
       const TYPE_LABEL = { hq: '본사', regional_branch: '지역지사', branch: '지사', dealer: '대리점' };
+      // 담당자 요청
+      const pendingStaff = STAFF_REQUESTS.filter(r => r.status === 'pending');
+      const staffSection = pendingStaff.length > 0 ? '<div class="mt-2"><p class="text-[9px] font-black text-blue-500 uppercase tracking-widest mb-3">담당자 추가 요청 (' + pendingStaff.length + '건)</p><div class="space-y-3">' +
+        pendingStaff.map(function(r, i) {
+          const realIdx = STAFF_REQUESTS.findIndex(function(x){ return x === r; });
+          return '<div class="bg-white border-2 border-blue-200 rounded-2xl p-4 flex items-center justify-between">' +
+            '<div><p class="text-sm font-black">' + r.staffName + '</p><p class="text-[10px] text-neutral-400">' + r.branchName + ' · ' + (r.position||'담당') + (r.staffPhone ? ' · ' + r.staffPhone : '') + '</p></div>' +
+            '<div class="flex gap-2"><button onclick="approveStaffRequest(' + realIdx + ')" class="px-4 py-2 bg-green-500 text-white rounded-lg text-[10px] font-black hover:bg-green-600">승인</button><button onclick="rejectStaffRequest(' + realIdx + ')" class="px-4 py-2 bg-white border border-red-200 text-red-500 rounded-lg text-[10px] font-black hover:bg-red-50">거절</button></div>' +
+          '</div>';
+        }).join('') + '</div></div>' : '';
 
       return `
         <div class="space-y-6">
+          ${staffSection}
           <div class="flex items-center justify-between">
             <h3 class="text-sm font-black uppercase tracking-widest">등록 요청 관리</h3>
             <button onclick="loadRegistrationRequests()" class="text-[10px] font-black text-neutral-400 hover:text-black transition-colors flex items-center gap-1.5 border border-neutral-200 px-3 py-1.5 rounded-lg hover:bg-white">
@@ -1451,6 +2491,7 @@
                   </div>
                   <div class="flex gap-2">
                     <button onclick="approveRegistration('${r.id}')" class="px-4 py-2 bg-green-500 text-white rounded-lg text-[10px] font-black uppercase hover:bg-green-600 active:scale-[0.97] transition-all">승인</button>
+                    <button onclick="openEditRegistration('${r.id}')" class="px-4 py-2 bg-blue-50 border border-blue-200 text-blue-600 rounded-lg text-[10px] font-black uppercase hover:bg-blue-100 active:scale-[0.97] transition-all">수정</button>
                     <button onclick="rejectRegistration('${r.id}')" class="px-4 py-2 bg-white border border-red-200 text-red-500 rounded-lg text-[10px] font-black uppercase hover:bg-red-50 active:scale-[0.97] transition-all">거절</button>
                   </div>
                 </div>
@@ -1522,8 +2563,9 @@
                       <span class="text-[8px] font-black ml-2 px-1.5 py-0.5 rounded ${r.status === 'approved' ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'}">${r.status === 'approved' ? '승인' : '거절'}</span>
                     </div>
                   </div>
-                  <div class="text-right">
+                  <div class="flex items-center gap-3">
                     <p class="text-[9px] text-neutral-300">${TYPE_LABEL[r.companyType] || r.companyType}</p>
+                    <button onclick="deleteRegistrationRecord('${r.id}')" class="text-[9px] font-black text-neutral-300 hover:text-red-500 transition-colors border border-neutral-200 hover:border-red-300 px-2 py-1 rounded-lg">삭제</button>
                   </div>
                 </div>
                 <div class="mt-3 grid grid-cols-2 gap-2 text-[9px] text-neutral-400">
@@ -1540,6 +2582,237 @@
           ` : ''}
         </div>
       `;
+    }
+
+    function renderBranchAdmin() {
+      const myBranch = state.currentUser;
+      const myData = BRANCHES[myBranch] || {};
+      const staff = myData.staff || [];
+      const myRequests = STAFF_REQUESTS.filter(r => r.branchName === myBranch);
+      const staffRows = staff.map(function(s) {
+        return '<div class="flex items-center gap-3 py-2 border-b border-neutral-100 last:border-0">' +
+          '<div class="w-7 h-7 rounded-full bg-neutral-100 flex items-center justify-center text-[9px] font-black">' + (s.name||'?').slice(-1) + '</div>' +
+          '<div><span class="text-[11px] font-black">' + (s.name||'-') + '</span>' +
+          (s.position ? '<span class="ml-1.5 text-[8px] border border-neutral-200 px-1 rounded">' + s.position + '</span>' : '') + '</div>' +
+        '</div>';
+      }).join('') || '<p class="text-[10px] text-neutral-300 py-3">등록된 담당자가 없습니다.</p>';
+      return `
+        <div class="min-h-screen bg-neutral-50 animate-fade-in">
+          <nav class="fixed w-full top-0 z-[60] bg-white border-b border-neutral-200 h-16 flex items-center px-8 justify-between shadow-sm">
+            <div class="flex items-center gap-4">
+              <button onclick="setState({currentView:'dashboard'})" class="hover:opacity-70 transition-opacity cursor-pointer">
+                <img src="assets/오스카CI_04LogoBLACK_1.png" alt="OSKA" class="h-5 object-contain" onerror="this.style.display='none'">
+              </button>
+              <span class="bg-blue-100 text-blue-700 text-[8px] font-black px-2 py-0.5 rounded tracking-widest uppercase">${myBranch}</span>
+              <span class="font-black text-xs tracking-widest uppercase text-neutral-600">담당자 관리</span>
+            </div>
+            <button onclick="setState({currentView:'dashboard'})" class="flex items-center gap-2 text-[10px] font-black text-neutral-400 hover:text-black border border-neutral-200 px-3 py-1.5 rounded-lg"><i data-lucide="arrow-left" class="w-3.5 h-3.5"></i>대시보드</button>
+          </nav>
+          <main class="pt-24 pb-20 max-w-lg mx-auto px-6">
+            <h1 class="text-2xl font-black tracking-tighter mb-6">담당자 관리</h1>
+
+            <!-- 현재 담당자 -->
+            <div class="bg-white rounded-2xl border border-neutral-200 p-5 mb-4 shadow-sm">
+              <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-3">현재 담당자 (${staff.length}명)</h3>
+              ${staffRows}
+            </div>
+
+            <!-- 담당자 추가 요청 -->
+            <div class="bg-white rounded-2xl border border-neutral-200 p-5 mb-4 shadow-sm">
+              <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-4">담당자 추가 요청</h3>
+              <div class="space-y-3 mb-4">
+                <div><label class="text-[9px] font-black text-neutral-400 ml-1">이름 *</label><input id="reqStaffName" type="text" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" placeholder="홍길동" /></div>
+                <div><label class="text-[9px] font-black text-neutral-400 ml-1">전화번호</label><input id="reqStaffPhone" type="tel" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1" placeholder="010-0000-0000" oninput="var v=this.value.replace(/[^0-9]/g,'');if(v.length<=3)this.value=v;else if(v.length<=7)this.value=v.slice(0,3)+'-'+v.slice(3);else this.value=v.slice(0,3)+'-'+v.slice(3,7)+'-'+v.slice(7,11);" /></div>
+                <div><label class="text-[9px] font-black text-neutral-400 ml-1">직급</label>
+                <select id="reqStaffPositionSelect" onchange="document.getElementById('reqStaffPositionCustomWrap').style.display=this.value==='직접입력'?'block':'none';" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none mt-1">
+                  <option>사원</option><option>프로</option><option>팀장</option><option>실장</option><option>이사</option><option value="직접입력">직접 입력</option>
+                </select>
+                <div id="reqStaffPositionCustomWrap" style="display:none;" class="mt-2">
+                  <input id="reqStaffPositionCustom" type="text" placeholder="직급 직접 입력 (예: 수석, 차장)" class="w-full h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none" />
+                </div></div>
+              </div>
+              <button onclick="submitStaffRequest()" class="w-full h-11 bg-black text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800">요청 보내기</button>
+            </div>
+
+            <!-- 요청 현황 -->
+            ${myRequests.length > 0 ? `
+            <div class="bg-white rounded-2xl border border-neutral-200 p-5 shadow-sm">
+              <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-3">요청 현황</h3>
+              ${myRequests.map(function(r) {
+                const statusCls = r.status==='approved'?'bg-green-100 text-green-700':r.status==='rejected'?'bg-red-100 text-red-700':r.status==='deleted'?'bg-neutral-200 text-neutral-500':'bg-yellow-100 text-yellow-700';
+                const statusLabel = r.status==='approved'?'승인됨':r.status==='rejected'?'거절됨':r.status==='deleted'?'삭제됨':'검토중';
+                return '<div class="flex items-center justify-between py-2 border-b border-neutral-100 last:border-0"><div><span class="text-[10px] font-black">' + r.staffName + '</span>' + (r.position ? '<span class="text-[9px] text-neutral-400 ml-1.5">' + r.position + '</span>' : '') + '</div><span class="text-[9px] px-2 py-0.5 rounded font-black ' + statusCls + '">' + statusLabel + '</span></div>';
+              }).join('')}
+            </div>` : ''}
+          </main>
+        </div>`;
+    }
+
+    async function submitStaffRequest() {
+      const name = document.getElementById('reqStaffName').value.trim();
+      const phone = document.getElementById('reqStaffPhone').value.trim();
+      const positionSel = document.getElementById('reqStaffPositionSelect').value;
+      const position = positionSel === '직접입력'
+        ? (document.getElementById('reqStaffPositionCustom')?.value.trim() || '사원')
+        : positionSel;
+      if (!name) return showAdminMsg('이름을 입력하세요.', 'error');
+      STAFF_REQUESTS.push({ branchName: state.currentUser, staffName: name, staffPhone: phone, position, status: 'pending', createdAt: new Date().toISOString() });
+      await saveStaffRequests();
+      // 본사에 알림
+      await pushNotification('"' + state.currentUser + '"에서 담당자 추가 요청: ' + name + ' (' + position + ')', 'info');
+      alert('요청이 전송되었습니다. 본사 승인 후 계정이 생성됩니다.');
+      render();
+    }
+
+    function renderBranchTypeAccounts(type) {
+      const typeLabel = type === 'branch' ? '지사' : '대리점';
+      const list = Object.entries(BRANCHES).filter(([, d]) => d.type === type);
+      if (list.length === 0) return '<div class="bg-white border border-neutral-200 rounded-2xl p-10 text-center"><i data-lucide="inbox" class="w-8 h-8 text-neutral-200 mx-auto mb-3"></i><p class="text-sm text-neutral-300 font-bold">등록된 ' + typeLabel + '이 없습니다.</p><p class="text-[10px] text-neutral-300 mt-1">등록 요청 탭에서 승인하면 자동으로 추가됩니다.</p></div>';
+      return list.map(function(entry) {
+        const bName = entry[0]; const bData = entry[1];
+        const staff = bData.staff || [];
+        const brStatus = bData.status || 'active';
+        const brStatusCls = brStatus==='active'?'bg-green-100 text-green-700':brStatus==='dormant'?'bg-yellow-100 text-yellow-700':'bg-neutral-200 text-neutral-500';
+        const brStatusLabel = brStatus==='active'?'운영중':brStatus==='dormant'?'휴면':'폐지';
+        const staffRows = staff.map(function(s,i) {
+          return '<div class="flex items-center justify-between py-2 border-b border-neutral-100 last:border-0 hover:bg-neutral-50 px-1 group">' +
+            '<div class="flex items-center gap-3">' +
+              '<div class="w-6 h-6 rounded-full bg-neutral-100 flex items-center justify-center text-[8px] font-black">' + (s.name||'?').slice(-1) + '</div>' +
+              '<div><span class="text-[10px] font-black">' + (s.name||'-') + '</span>' +
+              (s.position ? '<span class="ml-1.5 text-[8px] border border-neutral-200 px-1 rounded">' + s.position + '</span>' : '') +
+              (s.phone ? '<span class="ml-1.5 text-[9px] text-neutral-400">' + s.phone + '</span>' : '') + '</div>' +
+            '</div>' +
+            '<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">' +
+              '<input type="text" placeholder="새 비번" class="h-7 w-20 px-2 text-[9px] border border-neutral-200 rounded-lg" id="spw_' + bName.replace(/\s/g,'_') + '_' + i + '" maxlength="10" />' +
+              '<button onclick="updateStaffPw(\'' + bName + '\',' + i + ',document.getElementById(\'spw_' + bName.replace(/\s/g,'_') + '_' + i + '\').value)" class="h-7 px-2 bg-neutral-100 rounded-lg text-[8px] font-black hover:bg-neutral-200">변경</button>' +
+            '</div>' +
+          '</div>';
+        }).join('');
+        return '<div class="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden mb-3">' +
+          '<div class="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">' +
+            '<div class="flex items-center gap-2">' +
+              '<span class="text-sm font-black">' + bName + '</span>' +
+              '<span class="text-[8px] px-2 py-0.5 rounded font-black ' + brStatusCls + '">' + brStatusLabel + '</span>' +
+            '</div>' +
+            '<span class="text-[9px] text-neutral-400 font-bold">담당자 ' + staff.length + '명</span>' +
+          '</div>' +
+          '<div class="px-4 py-2">' +
+            '<div class="grid grid-cols-2 gap-2 text-[9px] text-neutral-500 py-2 border-b border-neutral-100 mb-2">' +
+              '<span>대표: ' + (bData.ownerName||'-') + '</span>' +
+              '<span>전화: ' + (bData.phone||'-') + '</span>' +
+              '<span>이메일: ' + (bData.email||'-') + '</span>' +
+              '<span>주소: ' + (bData.address||'-') + '</span>' +
+            '</div>' +
+            (staffRows || '<p class="text-[9px] text-neutral-300 py-2">등록된 담당자 없음</p>') +
+          '</div>' +
+        '</div>';
+      }).join('');
+    }
+
+    function renderAdminBranchAccounts() {
+      const statusOrder = { active: 0, dormant: 1, closed: 2 };
+      const list = Object.entries(BRANCHES)
+        .filter(function(e){ return e[1].type === 'branch'; })
+        .sort(function(a, b){ return (statusOrder[a[1].status||'active']||0) - (statusOrder[b[1].status||'active']||0); });
+      const branchNames = list.map(function(e){ return e[0]; });
+      if (list.length === 0) return '<div class="bg-white border border-neutral-200 rounded-2xl p-10 text-center"><i data-lucide="inbox" class="w-8 h-8 text-neutral-200 mx-auto mb-3"></i><p class="text-sm text-neutral-300 font-bold">등록된 지사가 없습니다.</p><p class="text-[10px] text-neutral-300 mt-1">등록 요청 탭에서 승인하면 자동으로 추가됩니다.</p></div>';
+      return list.map(function(entry) {
+        const bName = entry[0]; const bData = entry[1];
+        const staff = bData.staff || [];
+        const brStatus = bData.status || 'active';
+        const brStatusCls = brStatus==='active'?'bg-green-100 text-green-700':brStatus==='dormant'?'bg-yellow-100 text-yellow-700':'bg-neutral-200 text-neutral-500';
+        const brStatusLabel = brStatus==='active'?'운영중':brStatus==='dormant'?'휴면':'폐지';
+        const isExpanded = state.expandedBranch === bName;
+        // 담당지역 체크박스
+        const ALL_REGIONS_LIST = ['서울','부산','대구','인천','광주','대전','울산','세종','경기','강원','충북','충남','전북','전남','경북','경남','제주'];
+        const safeClass = 'region-cb-' + bName.replace(/[^a-zA-Z0-9가-힣]/g, '_');
+        const regionCbs = ALL_REGIONS_LIST.map(function(r){ return '<label class="flex items-center gap-1 cursor-pointer"><input type="checkbox" class="' + safeClass + '" value="' + r + '" ' + ((bData.regions||[]).includes(r)?'checked':'') + ' /><span class="text-[10px]">' + r + '</span></label>'; }).join('');
+        // 담당자 목록
+        const staffRows = staff.length > 0 ? staff.map(function(s, i) {
+          return '<div class="flex items-center justify-between py-2 border-b border-neutral-100 last:border-0 hover:bg-neutral-50 px-1 group">' +
+            '<div class="flex items-center gap-2"><div class="w-6 h-6 rounded-full bg-neutral-100 flex items-center justify-center text-[8px] font-black">' + (s.name||'?').slice(-1) + '</div>' +
+            '<span class="text-[10px] font-black">' + (s.name||'-') + '</span>' +
+            (s.position ? '<span class="text-[8px] border border-neutral-200 px-1 rounded ml-1">' + s.position + '</span>' : '') +
+            (s.phone ? '<span class="text-[9px] text-neutral-400 ml-1">' + s.phone + '</span>' : '') + '</div>' +
+            '<div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">' +
+              '<input type="text" placeholder="새 비번" class="h-7 w-20 px-2 text-[9px] border border-neutral-200 rounded-lg outline-none" id="spw_' + bName.replace(/\s/g,'_') + '_' + i + '" maxlength="10" />' +
+              '<button onclick="updateStaffPw(\'' + bName + '\',' + i + ',document.getElementById(\'spw_' + bName.replace(/\s/g,'_') + '_' + i + '\').value)" class="h-7 px-2 bg-neutral-100 rounded-lg text-[8px] font-black hover:bg-neutral-200">변경</button>' +
+              '<button onclick="deleteStaffFromBranch(\'' + bName + '\',' + i + ')" class="h-7 px-2 bg-red-50 text-red-500 rounded-lg text-[8px] font-black hover:bg-red-100">삭제</button>' +
+            '</div></div>';
+        }).join('') : '<p class="text-[9px] text-neutral-300 py-2">등록된 담당자 없음</p>';
+        return '<div class="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden mb-4">' +
+          '<div class="px-5 py-4 border-b border-neutral-100 flex items-center justify-between">' +
+            '<div class="flex items-center gap-3">' +
+              '<span class="text-base font-black">' + bName + '</span>' +
+              '<span class="text-[8px] px-2 py-0.5 rounded font-black ' + brStatusCls + '">' + brStatusLabel + '</span>' +
+              '<select onchange="changeBranchStatus(\'' + bName + '\', this.value)" class="h-7 px-2 text-[9px] font-black bg-neutral-50 border border-neutral-200 rounded-lg focus:border-black outline-none cursor-pointer">' +
+                '<option value="active"' + (brStatus==='active'?' selected':'') + '>운영중</option>' +
+                '<option value="dormant"' + (brStatus==='dormant'?' selected':'') + '>휴면</option>' +
+                '<option value="closed"' + (brStatus==='closed'?' selected':'') + '>폐지</option>' +
+              '</select>' +
+            '</div>' +
+            '<div class="flex gap-2">' +
+            '<button class="btn-toggle-branch h-9 px-4 bg-neutral-100 text-neutral-600 rounded-lg text-[10px] font-black hover:bg-neutral-200 transition-all" data-branch="' + bName + '">' + (isExpanded?'접기':'상세/담당자 관리') + '</button>' +
+            '<button onclick="deleteBranch(\'' + bName + '\')" class="h-9 px-3 bg-red-50 text-red-500 rounded-lg text-[10px] font-black hover:bg-red-100 transition-all">삭제</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="px-5 py-3 grid grid-cols-2 gap-x-6 gap-y-1 text-[9px] text-neutral-500 border-b border-neutral-100">' +
+            '<span>대표: ' + (bData.ownerName||'-') + '</span><span>전화: ' + (bData.phone||'-') + '</span>' +
+            '<span>이메일: ' + (bData.email||'-') + '</span><span>주소: ' + (bData.address||'-') + '</span>' +
+          '</div>' +
+          (isExpanded ? '<div class="p-5 space-y-5">' +
+            '<div><p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-3">담당 지역</p><div class="grid grid-cols-6 gap-2">' + regionCbs + '</div><button onclick="saveBranchRegions(\'' + bName + '\')" class="mt-3 h-9 px-4 bg-green-600 text-white rounded-lg text-[9px] font-black hover:bg-green-700">지역 저장</button></div>' +
+            '<div class="flex items-end gap-3"><div><p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-2">유효 DB 시작일</p><input type="date" class="branch-valid-from h-10 px-3 bg-neutral-50 border border-neutral-200 rounded-xl text-sm font-bold focus:border-black outline-none" data-branch="' + bName + '" value="' + (bData.validFrom||'') + '" /></div><button onclick="saveBranchValidFrom(\'' + bName + '\')" class="h-10 px-4 bg-amber-500 text-white rounded-xl text-[9px] font-black hover:bg-amber-600">저장</button></div>' +
+            '<div><p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-3">담당자 (' + staff.length + '명)</p>' + staffRows + '</div>' +
+            '<div class="border-t border-neutral-100 pt-4"><p class="text-[9px] font-black text-neutral-400 uppercase tracking-widest mb-3">담당자 직접 추가</p>' +
+              '<div class="grid grid-cols-3 gap-2 mb-2">' +
+                '<input type="text" id="newStaffName_' + bName.replace(/\s/g,'_') + '" placeholder="이름" class="h-9 px-3 bg-neutral-50 border border-neutral-200 rounded-lg text-sm font-bold focus:border-black outline-none" />' +
+                '<input type="text" id="newStaffPhone_' + bName.replace(/\s/g,'_') + '" placeholder="전화번호" class="h-9 px-3 bg-neutral-50 border border-neutral-200 rounded-lg text-sm font-bold focus:border-black outline-none" />' +
+                '<select id="newStaffPos_' + bName.replace(/\s/g,'_') + '" class="h-9 px-3 bg-neutral-50 border border-neutral-200 rounded-lg text-sm font-bold focus:border-black outline-none"><option>사원</option><option>프로</option><option>팀장</option><option>실장</option><option>이사</option></select>' +
+              '</div>' +
+              '<button onclick="addStaffToBranch(\'' + bName + '\')" class="w-full h-9 bg-black text-white rounded-xl text-[9px] font-black uppercase hover:bg-neutral-800">담당자 추가</button>' +
+            '</div>' +
+          '</div>' : '') +
+        '</div>';
+      }).join('');
+    }
+
+    async function addStaffToBranch(bName) {
+      const safeName = bName.replace(/\s/g,'_');
+      const name = document.getElementById('newStaffName_' + safeName)?.value.trim();
+      const phone = document.getElementById('newStaffPhone_' + safeName)?.value.trim();
+      const position = document.getElementById('newStaffPos_' + safeName)?.value || '사원';
+      if (!name) return showAdminMsg('이름을 입력하세요.', 'error');
+      if (!BRANCHES[bName].staff) BRANCHES[bName].staff = [];
+      BRANCHES[bName].staff.push({ id: name, pw: '0000', name, phone, email: '', position });
+      if (!ACCOUNTS[name]) { ACCOUNTS[name]='0000'; ACCOUNT_TYPES[name]=BRANCHES[bName].type||'branch'; if(!ACCOUNT_SETTINGS.order.includes(name))ACCOUNT_SETTINGS.order.push(name); await saveAccountsToFirestore(); await saveAccountTypes(); await saveAccountSettings(); }
+      const ok = await saveBranchesToFirestore();
+      showAdminMsg(ok?'"'+name+'" 담당자가 추가되었습니다.':'저장 실패.', ok?'success':'error');
+      render();
+    }
+
+    async function deleteStaffFromBranch(bName, idx) {
+      if (!confirm('담당자를 삭제하시겠습니까?')) return;
+      const deletedName = BRANCHES[bName].staff[idx]?.name;
+      BRANCHES[bName].staff.splice(idx, 1);
+      const ok = await saveBranchesToFirestore();
+      // STAFF_REQUESTS에서 해당 담당자 상태를 'deleted'로 업데이트
+      if (deletedName) {
+        STAFF_REQUESTS.forEach(function(r) {
+          if (r.branchName === bName && r.staffName === deletedName && r.status === 'approved') {
+            r.status = 'deleted';
+          }
+        });
+        await saveStaffRequests();
+      }
+      showAdminMsg(ok?'담당자가 삭제되었습니다.':'저장 실패.', ok?'success':'error');
+      render();
+    }
+
+    function renderAdminDealerAccounts() {
+      const list = Object.entries(BRANCHES).filter(function(e){ return e[1].type === 'dealer'; });
+      if (list.length === 0) return '<div class="bg-white border border-neutral-200 rounded-2xl p-10 text-center"><i data-lucide="inbox" class="w-8 h-8 text-neutral-200 mx-auto mb-3"></i><p class="text-sm text-neutral-300 font-bold">등록된 대리점이 없습니다.</p><p class="text-[10px] text-neutral-300 mt-1">등록 요청 탭에서 승인하면 자동으로 추가됩니다.</p></div>';
+      return '<div class="space-y-4"><div class="flex items-center justify-between"><h3 class="text-sm font-black uppercase tracking-widest">대리점 계정 관리</h3><p class="text-[10px] text-neutral-400">등록 요청 탭에서 승인 시 자동 추가됩니다.</p></div>' + renderBranchTypeAccounts('dealer') + '</div>';
     }
 
     function renderAdminBranches() {
@@ -1590,6 +2863,9 @@
               const typeColor = branch.type === 'hq' ? 'border-neutral-300 bg-neutral-50' : branch.type === 'dealer' ? 'border-purple-200 bg-purple-50' : 'border-blue-200 bg-blue-50';
               const isExpanded = state.expandedBranch === branchName;
               const staff = branch.staff || [];
+              const brStatus = branch.status || 'active';
+              const brStatusLabel = brStatus === 'active' ? '운영중' : brStatus === 'dormant' ? '휴면' : '폐지';
+              const brStatusCls = brStatus === 'active' ? 'bg-green-100 text-green-700' : brStatus === 'dormant' ? 'bg-yellow-100 text-yellow-700' : 'bg-neutral-200 text-neutral-500';
 
               return `
               <div class="bg-white rounded-2xl border ${typeColor} shadow-sm overflow-hidden">
@@ -1600,6 +2876,12 @@
                       <div class="flex items-center gap-3 mb-2">
                         <h3 class="text-lg font-black">${branchName}</h3>
                         <span class="text-[8px] font-black px-2 py-0.5 rounded ${branch.type === 'hq' ? 'bg-neutral-200 text-neutral-700' : branch.type === 'dealer' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}">${typeLabel}</span>
+                        <span class="text-[8px] font-black px-2 py-0.5 rounded ${brStatusCls}">${brStatusLabel}</span>
+                        <select onchange="changeBranchStatus('${branchName}', this.value)" class="h-7 px-2 text-[9px] font-black bg-neutral-50 border border-neutral-200 rounded-lg focus:border-black outline-none cursor-pointer">
+                          <option value="active" ${brStatus === 'active' ? 'selected' : ''}>운영중</option>
+                          <option value="dormant" ${brStatus === 'dormant' ? 'selected' : ''}>휴면</option>
+                          <option value="closed" ${brStatus === 'closed' ? 'selected' : ''}>폐지</option>
+                        </select>
                       </div>
                       <div class="text-[10px] text-neutral-400 space-y-0.5 font-bold">
                         ${branch.bizNumber ? `<p>사업자: ${branch.bizNumber}</p>` : ''}
@@ -1716,6 +2998,413 @@
           </div>
         </div>
       `;
+    }
+
+    // ===== 서식 승인 관련 함수 =====
+    async function loadPendingForms() {
+      try {
+        const { db, collection, getDocs, query, orderBy } = window.OSKA_DB;
+        const snap = await getDocs(query(collection(db, 'works_forms'), orderBy('createdAt', 'desc')));
+        const allForms = [];
+        snap.forEach(doc => allForms.push({ id: doc.id, ...doc.data() }));
+        state._pendingForms = allForms.filter(f => f.status === 'pending');
+        state._approvedForms = allForms.filter(f => f.status === 'approved');
+        render();
+      } catch(e) { console.error('Load forms error:', e); }
+    }
+    async function approveForm(id) {
+      if (!confirm('이 서식을 승인하여 게시하시겠습니까?')) return;
+      try {
+        const { db, doc, updateDoc, serverTimestamp } = window.OSKA_DB;
+        await updateDoc(doc(db, 'works_forms', id), { status: 'approved', approvedBy: state.currentUser, approvedAt: serverTimestamp() });
+        await loadPendingForms();
+      } catch(e) { alert('오류: ' + e.message); }
+    }
+    async function rejectForm(id) {
+      const reason = prompt('반려 사유를 입력하세요 (선택사항):') ?? '';
+      try {
+        const { db, doc, updateDoc, serverTimestamp } = window.OSKA_DB;
+        await updateDoc(doc(db, 'works_forms', id), { status: 'rejected', rejectReason: reason, rejectedAt: serverTimestamp() });
+        await loadPendingForms();
+      } catch(e) { alert('오류: ' + e.message); }
+    }
+    async function revokeForm(id) {
+      if (!confirm('승인을 취소하고 서식을 삭제하시겠습니까?')) return;
+      try {
+        const { db, doc, deleteDoc } = window.OSKA_DB;
+        await deleteDoc(doc(db, 'works_forms', id));
+        await loadPendingForms();
+      } catch(e) { alert('오류: ' + e.message); }
+    }
+
+    function renderAdminFormsApproval() {
+      const pending = (state._pendingForms || []);
+      const approved = (state._approvedForms || []);
+      return `
+        <div class="space-y-4">
+          <div class="bg-white rounded-2xl border border-neutral-200 p-6 shadow-sm">
+            <div class="flex items-center justify-between mb-4">
+              <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em]">
+                <i data-lucide="clock" class="w-3.5 h-3.5 inline mr-1.5"></i>승인 대기 (${pending.length}건)
+              </h3>
+              <button onclick="loadPendingForms()" class="text-[9px] font-black text-neutral-400 hover:text-black border border-neutral-200 px-2 py-1 rounded-lg">새로고침</button>
+            </div>
+            ${pending.length > 0 ? pending.map(f => `
+              <div class="border border-teal-100 rounded-xl p-4 mb-3">
+                <div class="flex items-start justify-between gap-4">
+                  <div class="flex-1">
+                    <p class="font-black text-sm">${f.title || '제목 없음'}</p>
+                    <p class="text-[10px] text-neutral-400 mt-0.5">${f.description || '설명 없음'}</p>
+                    <p class="text-[9px] text-neutral-300 mt-1">제출자: ${f.submittedByName || '-'} · 파일: ${f.fileName || '-'}</p>
+                  </div>
+                  <div class="flex gap-2 shrink-0">
+                    <a href="${f.fileUrl}" target="_blank" class="h-8 px-3 border border-neutral-200 rounded-lg text-[10px] font-black text-neutral-500 hover:border-black flex items-center gap-1">미리보기</a>
+                    <button onclick="approveForm('${f.id}')" class="h-8 px-3 bg-teal-500 text-white rounded-lg text-[10px] font-black hover:bg-teal-600">승인</button>
+                    <button onclick="rejectForm('${f.id}')" class="h-8 px-3 bg-red-100 text-red-500 rounded-lg text-[10px] font-black hover:bg-red-200">반려</button>
+                  </div>
+                </div>
+              </div>
+            `).join('') : '<p class="text-[10px] text-neutral-300 text-center py-6">대기 중인 서식 요청이 없습니다.</p>'}
+          </div>
+          <div class="bg-white rounded-2xl border border-neutral-200 p-6 shadow-sm">
+            <h3 class="text-[10px] font-black text-neutral-400 uppercase tracking-[0.3em] mb-4">
+              <i data-lucide="check-circle" class="w-3.5 h-3.5 inline mr-1.5"></i>승인된 서식 (${approved.length}건)
+            </h3>
+            ${approved.length > 0 ? `<div class="space-y-2">` + approved.map(f => `
+              <div class="flex items-center justify-between py-2 border-b border-neutral-100">
+                <div>
+                  <p class="text-[11px] font-black">${f.title}</p>
+                  <p class="text-[9px] text-neutral-400">${f.submittedByName || '-'}</p>
+                </div>
+                <button onclick="revokeForm('${f.id}')" class="text-[9px] text-red-400 hover:text-red-600 font-black">삭제</button>
+              </div>
+            `).join('') + `</div>` : '<p class="text-[10px] text-neutral-300 text-center py-4">승인된 서식이 없습니다.</p>'}
+          </div>
+        </div>
+      `;
+    }
+
+    // ===== 비밀번호 찾기 요청 목록 (어드민) =====
+    let _pwResetCache = [];
+    let _pwResetUnsub = null;
+    function subscribePasswordResets() {
+      if (_pwResetUnsub) return;
+      try {
+        const { db, collection, query, orderBy, onSnapshot } = window.OSKA_DB;
+        const q = query(collection(db, 'works_password_reset_requests'), orderBy('createdAt', 'desc'));
+        _pwResetUnsub = onSnapshot(q, snap => {
+          _pwResetCache = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          const pending = _pwResetCache.filter(r => r.status !== 'done' && r.status !== 'cancelled');
+          state._pendingPwResets = pending;
+          if (state.currentView === 'admin' && state.adminTab === 'pw_reset') renderApp();
+          // 뱃지 갱신
+          const root = document.getElementById('root');
+          if (root && state.currentView === 'admin') {
+            const tabBtn = root.querySelector('[data-tab="pw_reset"] .bg-amber-500');
+            if (tabBtn) tabBtn.textContent = pending.length > 0 ? pending.length : '';
+          }
+        });
+      } catch(e) { console.warn('subscribePasswordResets error:', e); }
+    }
+
+    function renderAdminPasswordResets() {
+      subscribePasswordResets();
+      const pending = _pwResetCache.filter(r => r.status !== 'done' && r.status !== 'cancelled');
+      const done = _pwResetCache.filter(r => r.status === 'done' || r.status === 'cancelled');
+      const fmtTs = ts => {
+        if (!ts?.seconds) return '-';
+        const d = new Date(ts.seconds * 1000);
+        return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+      };
+      return `
+        <div class="space-y-6">
+          <div class="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+            <div class="flex items-center gap-2 mb-2">
+              <i data-lucide="key-round" class="w-4 h-4 text-amber-600"></i>
+              <h3 class="text-sm font-black text-amber-700">처리 대기 (${pending.length}건)</h3>
+            </div>
+            <p class="text-[10px] text-amber-600 mb-3">고객 연락처로 임시 비밀번호 안내 후 "처리 완료" 클릭하세요. (실제 비밀번호 리셋은 계정관리 탭에서 수행)</p>
+            ${pending.length === 0 ? '<p class="text-[11px] text-neutral-400 text-center py-4">대기 중인 요청이 없습니다.</p>' : `
+              <div class="space-y-2">
+                ${pending.map(r => `
+                  <div class="bg-white border border-amber-200 rounded-xl p-3 flex items-center gap-3">
+                    <div class="flex-1 text-[11px]">
+                      <p class="font-black">${r.name || '-'} <span class="text-neutral-400 font-bold ml-2">@${r.id || '-'}</span></p>
+                      <p class="text-neutral-500 mt-0.5">📞 ${r.phone || '-'} · ${fmtTs(r.createdAt)}</p>
+                      ${r.memo ? `<p class="text-neutral-400 text-[10px] mt-1">💬 ${r.memo}</p>` : ''}
+                    </div>
+                    <button onclick="markPwResetDone('${r.id}')" class="h-8 px-3 bg-green-500 text-white rounded-lg text-[10px] font-black hover:bg-green-600 transition-all">처리 완료</button>
+                    <button onclick="markPwResetCancelled('${r.id}')" class="h-8 px-3 bg-neutral-200 text-neutral-500 rounded-lg text-[10px] font-black hover:bg-neutral-300 transition-all">취소</button>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+          <div class="bg-white border border-neutral-200 rounded-2xl p-4">
+            <h3 class="text-sm font-black text-neutral-400 mb-3">처리 이력 (${done.length}건)</h3>
+            ${done.length === 0 ? '<p class="text-[11px] text-neutral-300 text-center py-4">이력이 없습니다.</p>' : `
+              <div class="space-y-1">
+                ${done.slice(0, 30).map(r => `
+                  <div class="text-[10px] text-neutral-400 py-1.5 border-b border-neutral-100 flex items-center justify-between">
+                    <span>${r.name || '-'} (${r.id || '-'}) · ${r.phone || '-'}</span>
+                    <span class="${r.status === 'done' ? 'text-green-500' : 'text-neutral-300'} font-black">${r.status === 'done' ? '처리완료' : '취소'} · ${fmtTs(r.createdAt)}</span>
+                  </div>
+                `).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    async function markPwResetDone(id) {
+      try {
+        const { db, doc, updateDoc, serverTimestamp } = window.OSKA_DB;
+        await updateDoc(doc(db, 'works_password_reset_requests', id), { status: 'done', handledAt: serverTimestamp() });
+      } catch(e) { alert('처리 실패: ' + e.message); }
+    }
+    async function markPwResetCancelled(id) {
+      try {
+        const { db, doc, updateDoc, serverTimestamp } = window.OSKA_DB;
+        await updateDoc(doc(db, 'works_password_reset_requests', id), { status: 'cancelled', handledAt: serverTimestamp() });
+      } catch(e) { alert('처리 실패: ' + e.message); }
+    }
+
+    // ===== 로그인 기록 (어드민) =====
+    let _loginLogsCache = [];
+    let _loginLogsUnsub = null;
+    function subscribeLoginLogs() {
+      if (_loginLogsUnsub) return;
+      try {
+        const { db, appId, collection, query, orderBy, onSnapshot } = window.OSKA_DB;
+        const q = query(collection(db, 'artifacts', appId, 'public', 'data', 'login_logs'), orderBy('loginAt', 'desc'));
+        _loginLogsUnsub = onSnapshot(q, snap => {
+          _loginLogsCache = snap.docs.map(d => ({ id: d.id, ...d.data() })).slice(0, 500);
+          if (state.currentView === 'admin' && state.adminTab === 'login_logs') renderApp();
+        });
+      } catch(e) { console.warn('subscribeLoginLogs error:', e); }
+    }
+
+    function renderAdminLoginLogs() {
+      subscribeLoginLogs();
+      const logs = _loginLogsCache;
+      const emailAlertEnabled = (ACCOUNT_SETTINGS.loginEmailAlert !== false);
+      const fmtTs = ts => {
+        if (!ts?.seconds) return '-';
+        const d = new Date(ts.seconds * 1000);
+        return d.getFullYear()+'.'+String(d.getMonth()+1).padStart(2,'0')+'.'+String(d.getDate()).padStart(2,'0')+' '+String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0')+':'+String(d.getSeconds()).padStart(2,'0');
+      };
+      const typeLabel = t => ({hq:'본사', branch:'지사', dealer:'대리점', construction:'시공', master:'마스터'}[t] || '-');
+      const typeColor = t => ({hq:'bg-blue-50 text-blue-600', branch:'bg-green-50 text-green-600', dealer:'bg-purple-50 text-purple-600', construction:'bg-orange-50 text-orange-600', master:'bg-red-50 text-red-600'}[t] || 'bg-neutral-50 text-neutral-500');
+      return `
+        <div class="space-y-6">
+          <!-- 이메일 알람 설정 -->
+          <div class="bg-white border border-neutral-200 rounded-2xl p-4 space-y-3">
+            <!-- 로그인 알람 -->
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-black">EmailJS 로그인 알람</p>
+                <p class="text-[10px] text-neutral-400 mt-0.5">본사 외 로그인 시 이메일 발송 (본사/마스터는 항상 생략)</p>
+              </div>
+              <button onclick="toggleLoginEmailAlert()" class="h-9 px-4 rounded-xl text-[11px] font-black ${emailAlertEnabled ? 'bg-green-500 text-white' : 'bg-neutral-200 text-neutral-500'}">${emailAlertEnabled ? '✓ ON' : 'OFF'}</button>
+            </div>
+            <!-- AS 접수 알림 수신 이메일 (#23) -->
+            <div class="border-t border-neutral-100 pt-3">
+              <p class="text-sm font-black mb-1">AS 접수 이메일 알림 수신자</p>
+              <p class="text-[10px] text-neutral-400 mb-2">외부 AS 사이트에서 접수 시 이 이메일로 알림 발송</p>
+              <div class="flex gap-2">
+                <input type="email" id="asEmailRecipientInput" value="${(ACCOUNT_SETTINGS.asEmailRecipient||'').replace(/"/g,'&quot;')}" placeholder="as@oska.co.kr" class="flex-1 h-9 px-3 text-[11px] bg-white border border-neutral-200 rounded-lg font-bold focus:border-black outline-none" />
+                <button onclick="saveASEmailRecipient()" class="h-9 px-4 bg-black text-white rounded-lg text-[11px] font-black hover:bg-neutral-800">저장</button>
+              </div>
+              ${ACCOUNT_SETTINGS.asEmailRecipient ? `<p class="text-[9px] text-green-500 mt-1.5">✓ 현재 수신: ${ACCOUNT_SETTINGS.asEmailRecipient}</p>` : '<p class="text-[9px] text-amber-500 mt-1.5">⚠ 이메일 주소 미설정 (AS 알림 발송 안 됨)</p>'}
+            </div>
+          </div>
+
+          <!-- 통계 -->
+          <div class="grid grid-cols-4 gap-3">
+            ${['hq','branch','dealer','construction'].map(t => {
+              const cnt = logs.filter(l => l.accountType === t).length;
+              return `<div class="bg-white border border-neutral-200 rounded-xl p-3 text-center">
+                <p class="text-[9px] font-black text-neutral-400 uppercase">${typeLabel(t)}</p>
+                <p class="text-2xl font-black mt-1">${cnt}</p>
+              </div>`;
+            }).join('')}
+          </div>
+
+          <!-- 로그인 기록 테이블 -->
+          <div class="bg-white border border-neutral-200 rounded-2xl overflow-hidden">
+            <div class="flex items-center justify-between p-4 border-b border-neutral-200">
+              <h3 class="text-sm font-black">로그인 기록 (최근 ${logs.length}건)</h3>
+              <span class="text-[10px] text-neutral-400">최대 500건 표시</span>
+            </div>
+            <div class="max-h-[500px] overflow-y-auto">
+              <table class="w-full text-[11px]">
+                <thead class="bg-neutral-50 sticky top-0">
+                  <tr>
+                    <th class="text-left px-3 py-2 font-black text-neutral-500">시간</th>
+                    <th class="text-left px-3 py-2 font-black text-neutral-500">계정</th>
+                    <th class="text-left px-3 py-2 font-black text-neutral-500">유형</th>
+                    <th class="text-left px-3 py-2 font-black text-neutral-500">기기</th>
+                    <th class="text-left px-3 py-2 font-black text-neutral-500">브라우저</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${logs.length === 0 ? '<tr><td colspan="5" class="text-center text-neutral-300 py-8">로그인 기록이 없습니다.</td></tr>' :
+                    logs.map(l => `<tr class="border-t border-neutral-100 hover:bg-neutral-50">
+                      <td class="px-3 py-2 text-neutral-500">${fmtTs(l.loginAt)}</td>
+                      <td class="px-3 py-2 font-black">${l.account || '-'}</td>
+                      <td class="px-3 py-2"><span class="text-[9px] font-black px-1.5 py-0.5 rounded ${typeColor(l.accountType)}">${typeLabel(l.accountType)}</span></td>
+                      <td class="px-3 py-2 text-neutral-500">${l.device || '-'}</td>
+                      <td class="px-3 py-2 text-neutral-500">${l.browser || '-'}</td>
+                    </tr>`).join('')
+                  }
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    // ===== #21 조직도 R&R 관리 =====
+    // 현재 조직 구조 (hr.js와 동일한 순서로 유지 — 부서/팀 이름 변경 시 hr.js와 함께 수정 필요)
+    const ORG_RNR_STRUCTURE = [
+      {
+        group: '대표이사 직속',
+        teams: [
+          { name: 'R&D 기업부설연구소', fallback: ['신제품 기획 및 설계 (시스템 퍼글러, 글라스 시스템 등)', '건축 외장 솔루션 기술 개발 및 특허 관리', '스마트 견적 시스템(Smart Quotation) 고도화 및 IT 솔루션 관리'] },
+          { name: 'Global Design Lab', fallback: ['이탈리아 현지 시장조사 및 글로벌 트렌드 분석', '해외 디자인 레퍼런스 수집 및 제품 기획 지원'] }
+        ]
+      },
+      {
+        group: '생산본부',
+        teams: [
+          { name: '임가공팀', fallback: ['알루미늄 프로파일 가공 및 주요 부속 정밀 조립', '공정별 중간 품질 검사 수행'] },
+          { name: '포장출하팀', fallback: ['완제품 최종 검수 및 포장', '물류 배송 스케줄링 및 상차 관리'] },
+          { name: '기술지원팀 (AS)', fallback: ['현장 실측 지원 및 시공 기술 자문', '제품 하자 보수(A/S) 및 고객 기술 대응'] }
+        ]
+      },
+      {
+        group: '사업본부',
+        teams: [
+          { name: '경영지원실', fallback: ['인사/노무, 재무/회계관리', '자재 수급 계획 및 구매 단가 관리'] },
+          { name: '브랜드전략팀', fallback: ['OSKA, GLASST, THE DECK 브랜드 마케팅 및 디자인', '웹사이트 UI/UX 관리 및 카탈로그 제작'] },
+          { name: '기술영업팀', fallback: ['B2B/B2C 기술 영업 및 총판 관리', '영업지원: 설계 검토 및 스마트 시스템 기반 견적 산출'] }
+        ]
+      }
+    ];
+
+    function renderAdminOrgRNR() {
+      const override = ACCOUNT_SETTINGS.orgRNR || {};
+      const teamBlocks = ORG_RNR_STRUCTURE.map(group => {
+        const teamsHTML = group.teams.map(t => {
+          const current = Array.isArray(override[t.name]) && override[t.name].length > 0 ? override[t.name] : t.fallback;
+          const isOverridden = Array.isArray(override[t.name]) && override[t.name].length > 0;
+          const textVal = current.join('\n').replace(/"/g, '&quot;');
+          const fallbackText = t.fallback.join('\n');
+          return `
+            <div class="bg-white border border-neutral-200 rounded-xl p-4">
+              <div class="flex items-center justify-between mb-2">
+                <p class="text-sm font-black">${t.name}</p>
+                ${isOverridden ? '<span class="text-[9px] font-black px-2 py-0.5 rounded bg-blue-50 text-blue-600">어드민 편집됨</span>' : '<span class="text-[9px] font-black px-2 py-0.5 rounded bg-neutral-100 text-neutral-400">기본값 (코드)</span>'}
+              </div>
+              <p class="text-[9px] text-neutral-400 mb-2">한 줄에 하나씩 R&R을 입력하세요</p>
+              <textarea id="rnr_${btoa(unescape(encodeURIComponent(t.name))).replace(/[^a-zA-Z0-9]/g,'')}" data-team="${t.name.replace(/"/g, '&quot;')}" rows="${Math.max(4, current.length + 1)}" class="w-full px-3 py-2 text-[11px] bg-neutral-50 border border-neutral-200 rounded-lg font-medium focus:border-black focus:bg-white outline-none resize-y">${textVal}</textarea>
+              <div class="flex gap-2 mt-2">
+                <button onclick="saveOrgRNR('${t.name.replace(/'/g, "\\'")}')" class="flex-1 h-9 bg-black text-white rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-neutral-800">저장</button>
+                ${isOverridden ? `<button onclick="resetOrgRNR('${t.name.replace(/'/g, "\\'")}')" class="h-9 px-3 border border-neutral-200 text-neutral-500 rounded-lg text-[10px] font-black hover:border-black hover:text-black">기본값 복원</button>` : ''}
+              </div>
+            </div>
+          `;
+        }).join('');
+        return `
+          <div class="mb-5">
+            <p class="text-[10px] font-black text-neutral-400 uppercase tracking-widest mb-2">${group.group}</p>
+            <div class="space-y-3">${teamsHTML}</div>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="space-y-4">
+          <div class="bg-sky-50 border border-sky-200 rounded-xl p-4">
+            <div class="flex items-center gap-2 mb-1">
+              <i data-lucide="network" class="w-4 h-4 text-sky-600"></i>
+              <p class="text-sm font-black text-sky-700">조직도 R&R (업무 범위) 관리</p>
+            </div>
+            <p class="text-[10px] text-sky-600 leading-relaxed">
+              OSKA Works → HR Docs → 조직도 탭의 각 팀 "R&R" 버튼에 표시되는 업무 범위를 편집합니다.<br>
+              Firestore에 저장되며, 모든 본사 직원 화면에 실시간 반영됩니다. 부서명/팀 구성 자체는 추후 Phase 2에서 지원 예정입니다.
+            </p>
+          </div>
+          ${teamBlocks}
+        </div>
+      `;
+    }
+
+    async function saveOrgRNR(teamName) {
+      // teamName이 id에서 인코딩되어 있어 직접 textarea[data-team] 조회
+      const textareas = document.querySelectorAll('textarea[data-team]');
+      let target = null;
+      textareas.forEach(t => { if (t.dataset.team === teamName) target = t; });
+      if (!target) { alert('편집 영역을 찾을 수 없습니다.'); return; }
+      const lines = target.value.split('\n').map(s => s.trim()).filter(Boolean);
+      if (lines.length === 0) { alert('최소 1줄의 R&R을 입력하세요. (기본값으로 되돌리려면 "기본값 복원" 버튼 사용)'); return; }
+      try {
+        const { db, doc, setDoc } = window.OSKA_DB;
+        const newRNR = { ...(ACCOUNT_SETTINGS.orgRNR || {}), [teamName]: lines };
+        ACCOUNT_SETTINGS.orgRNR = newRNR;
+        await setDoc(doc(db, 'settings', 'config'), { orgRNR: newRNR }, { merge: true });
+        renderApp();
+        // 간단한 성공 피드백
+        setTimeout(() => alert('✅ "' + teamName + '" R&R이 저장되었습니다.'), 50);
+      } catch(e) { alert('저장 실패: ' + e.message); }
+    }
+
+    async function resetOrgRNR(teamName) {
+      if (!confirm('"' + teamName + '" R&R을 기본값(코드 하드코딩)으로 되돌리시겠습니까?')) return;
+      try {
+        const { db, doc, setDoc } = window.OSKA_DB;
+        const newRNR = { ...(ACCOUNT_SETTINGS.orgRNR || {}) };
+        delete newRNR[teamName];
+        ACCOUNT_SETTINGS.orgRNR = newRNR;
+        await setDoc(doc(db, 'settings', 'config'), { orgRNR: newRNR }, { merge: true });
+        renderApp();
+      } catch(e) { alert('복원 실패: ' + e.message); }
+    }
+
+    async function toggleLoginEmailAlert() {
+      try {
+        const { db, doc, setDoc } = window.OSKA_DB;
+        const newValue = !(ACCOUNT_SETTINGS.loginEmailAlert !== false);
+        ACCOUNT_SETTINGS.loginEmailAlert = newValue;
+        await setDoc(doc(db, 'settings', 'config'), { loginEmailAlert: newValue }, { merge: true });
+        renderApp();
+      } catch(e) { alert('설정 저장 실패: ' + e.message); }
+    }
+
+    async function saveASEmailRecipient() {
+      const input = document.getElementById('asEmailRecipientInput');
+      if (!input) return;
+      const email = input.value.trim();
+      // 간단한 이메일 형식 검증 (빈 값은 해제로 간주)
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        alert('올바른 이메일 형식이 아닙니다.');
+        return;
+      }
+      try {
+        const { db, doc, setDoc } = window.OSKA_DB;
+        ACCOUNT_SETTINGS.asEmailRecipient = email;
+        await setDoc(doc(db, 'settings', 'config'), { asEmailRecipient: email }, { merge: true });
+        renderApp();
+        // 간단한 성공 표시
+        const btn = event?.target;
+        if (btn) {
+          const orig = btn.textContent;
+          btn.textContent = '✓ 저장됨';
+          setTimeout(() => { btn.textContent = orig; }, 1500);
+        }
+      } catch(e) { alert('저장 실패: ' + e.message); }
     }
 
     function renderAdminArchive() {
@@ -1841,12 +3530,16 @@
       if (document.getElementById('btnDeckBlocked')) document.getElementById('btnDeckBlocked').addEventListener('click', () => alert('권한이 없습니다.'));
 
       // 관리자 모드 이벤트
+      if (document.getElementById('profileBtn')) document.getElementById('profileBtn').addEventListener('click', () => setState({ currentView: 'profile' }));
       if (document.getElementById('adminBtn')) document.getElementById('adminBtn').addEventListener('click', handleAdminEntry);
       if (document.getElementById('exitAdmin')) document.getElementById('exitAdmin').addEventListener('click', () => setState({ currentView: 'dashboard', editingArchiveIdx: -1 }));
 
       // 탭 전환
       document.querySelectorAll('.admin-tab').forEach(btn => {
-        btn.addEventListener('click', () => setState({ adminTab: btn.dataset.tab, editingArchiveIdx: -1 }));
+        btn.addEventListener('click', () => {
+          setState({ adminTab: btn.dataset.tab, editingArchiveIdx: -1 });
+          if (btn.dataset.tab === 'forms_approval') loadPendingForms();
+        });
       });
 
       // 관리자 비밀번호 변경

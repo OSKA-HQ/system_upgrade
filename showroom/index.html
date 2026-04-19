@@ -616,6 +616,21 @@
                 console.error('예약 저장 오류:', e);
             }
 
+            // 1-1. Firestore — works_schedules 자동 등록 (주요일정 달력 연동)
+            try {
+                await window.SHOWROOM_DB.collection('works_schedules').add({
+                    type: 'showroom',
+                    title: '[쇼룸예약] ' + reservation.name + ' (' + (reservation.products.join(', ') || '미정') + ')',
+                    date: reservation.date,
+                    time: reservation.time || '',
+                    phone: reservation.phone,
+                    memo: reservation.memo || '',
+                    showroom: reservation.showroom || '',
+                    branch: '본사',
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+            } catch(e) { console.warn('works_schedules 저장 오류:', e); }
+
             // 2. Firestore — crm_customers 컬렉션 저장 (SMR 연동)
             try {
                 const now = new Date();
@@ -643,6 +658,7 @@
                     assignedBranch: '',
                     status: '미배정',
                     content: `[쇼룸예약] 쇼룸: ${reservation.showroom} / 날짜: ${reservation.date} / 시간: ${reservation.time} / 관심제품: ${reservation.products.join(', ')} / 요청: ${reservation.memo || '없음'}`,
+                    source: 'live',
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
                 console.log('[FB] 쇼룸예약 CRM 저장 성공, no:', newNo);

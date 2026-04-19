@@ -17,7 +17,6 @@ function applyBranchFromURL() {
         const manager = params.get('manager');
         const managersRaw = params.get('managers');
         const typesRaw = params.get('types');
-        const branchesRaw = params.get('branches');
         if (!branch) return;
 
         let allManagers = {};
@@ -25,11 +24,15 @@ function applyBranchFromURL() {
         let allBranches = {};
         try { if (managersRaw) allManagers = JSON.parse(managersRaw); } catch(e) {}
         try { if (typesRaw) allTypes = JSON.parse(typesRaw); } catch(e) {}
-        try { if (branchesRaw) allBranches = JSON.parse(branchesRaw); } catch(e) {}
+        // branches: sessionStorage 우선 (URI Too Long 방지), URL fallback
+        try {
+            const branchesRaw = sessionStorage.getItem('oska_branches') || params.get('branches');
+            if (branchesRaw) allBranches = JSON.parse(branchesRaw);
+        } catch(e) {}
 
-        // 1. BRANCHES 데이터로 지사 select 동적 생성
+        // 1. BRANCHES 데이터로 지사 select 동적 생성 (allBranches 없어도 본사는 항상 추가)
         const sel = document.getElementById('branch-select');
-        if (sel && Object.keys(allBranches).length > 0) {
+        if (sel) {
             let branchOpts = '<option value="">지사 선택</option>';
             branchOpts += '<option value="본사">본사</option>';
             Object.keys(allBranches).forEach(name => {
@@ -940,6 +943,7 @@ async function saveQuotationToCRM() {
                     assignedBranch: branch,
                     status: branch ? '' : '미배정',
                     content: `[견적] 담당: ${handler} / 금액: ₩${totalPrice} / 품목: ${products.map(p => p.product).join(', ')}`,
+                    source: 'live',
                     createdAt: firebase.firestore.FieldValue.serverTimestamp()
                 });
                 crmAction = '신규 고객 CRM 등록';

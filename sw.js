@@ -1,4 +1,4 @@
-const CACHE_NAME = "oska-v2.1";
+const CACHE_NAME = "oska-v3.0-20260418";
 const urlsToCache = [
   "./",
   "./index.html",

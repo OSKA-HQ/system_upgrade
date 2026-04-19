@@ -1075,12 +1075,130 @@ async function executeSubmit(){
     setStep(3,'error');
   }
 
+  // STEP 4: OSKA Works Firestore 저장 (works_as_requests + CRM)
+  setStep && setStep(4,'active');
+  try {
+    await saveASToFirestore({
+      customerName: state.customerName||'',
+      customerPhone: state.customerPhone||'',
+      sido: state.sido||'', sigungu: state.sigungu||'',
+      authorName: state.authorName||'',
+      totalAmount: grand,
+      matSum, laborCost, equipSum, travelCost,
+      memo: state.memo||'',
+      status: '접수'
+    });
+    setStep && setStep(4,'done');
+  } catch(err) {
+    console.warn('Firestore 저장 실패(AS 진행은 계속):', err);
+    setStep && setStep(4,'skip');
+  }
+
   // 완료
   setTimeout(()=>{
     document.getElementById('progressModal').style.display='none';
     showToast('견적서 제출이 완료되었습니다!');
   },1200);
 }
+
+// ===== OSKA Works Firestore 연동 (AS 접수 저장 + 이메일 알림) =====
+(async function initASFirebase() {
+  try {
+    const { initializeApp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js');
+    const { getAuth, signInAnonymously } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js');
+    const { getFirestore, collection, addDoc, doc, getDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js');
+    const app = initializeApp({
+      apiKey: 'AIzaSyDs8IJANSBncJHcFFrF03pLM7JvEOppcY0',
+      authDomain: 'oska-integrated-management.firebaseapp.com',
+      projectId: 'oska-integrated-management',
+      storageBucket: 'oska-integrated-management.firebasestorage.app',
+      messagingSenderId: '778732114280',
+      appId: '1:778732114280:web:96e00aff42bdbff3bf06dd'
+    }, 'as-site');
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+    await signInAnonymously(auth);
+    window._asDB = { db, collection, addDoc, doc, getDoc, serverTimestamp };
+    // EmailJS 설정 로드 (settings/config에서)
+    try {
+      const snap = await getDoc(doc(db, 'settings', 'config'));
+      if (snap.exists()) {
+        const cfg = snap.data();
+        window._asEmail = cfg.emailjs || null;
+        window._asEmailRecipient = cfg.asEmailRecipient || ''; // 어드민에서 설정 가능
+        if (window._asEmail && window._asEmail.publicKey && window.emailjs) {
+          window.emailjs.init(window._asEmail.publicKey);
+        }
+      }
+    } catch(e) { console.warn('EmailJS 설정 로드 실패:', e); }
+  } catch(e) { console.warn('AS Firebase 초기화 실패:', e); }
+})();
+
+async function saveASToFirestore(data) {
+  if (!window._asDB) return;
+  const { db, collection, addDoc, serverTimestamp } = window._asDB;
+  // works_as_requests에 저장
+  await addDoc(collection(db, 'works_as_requests'), {
+    ...data, createdAt: serverTimestamp(), submitTime: new Date().toLocaleString('ko-KR')
+  });
+  // CRM에도 동시 등록 (전화번호 있을 때)
+  if (data.customerPhone) {
+    const no = Math.floor(Math.random() * 100000) + 90000;
+    await addDoc(collection(db, 'crm_customers'), {
+      no, brand: '오스카', channel: 'AS접수',
+      phone: data.customerPhone, custType: '개인',
+      province: data.sido||'', district: data.sigungu||'',
+      address: [data.sido, data.sigungu].filter(Boolean).join(' '),
+      content: `[AS접수] ${data.authorName||''} - ${data.memo||''}`,
+      grade: '', grade2: '', product: '', consent: '',
+      assignedBranch: '', status: '미배정',
+      // KST 로컬 날짜 (UTC slice(0,10) 사용 시 새벽 시간대 -9시간 오차 버그 BUG-003)
+      date: (function(){ var d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); })(),
+      source: 'live',
+      createdAt: serverTimestamp()
+    });
+  }
+  // EmailJS 알림 (비동기, 실패해도 접수는 성공)
+  sendASEmailNotification(data).catch(e => console.warn('AS 이메일 알림 실패:', e));
+}
+
+// #23 AS 접수 이메일 알림
+async function sendASEmailNotification(data) {
+  if (!window._asEmail || !window.emailjs) return;
+  const { serviceId, templateIdAS, templateId } = window._asEmail;
+  const template = templateIdAS || templateId; // 전용 템플릿 없으면 기존 템플릿 재사용
+  if (!serviceId || !template) return;
+  const recipient = window._asEmailRecipient || '';
+  // 제목이 기존 로그인 알림 템플릿과 공유되는 경우를 위해 prefix로 구분
+  const params = {
+    subject_prefix: '[AS 접수]',
+    branch: '🔧 AS 신규 접수 — ' + (data.customerName || '고객'),
+    password: (data.totalAmount ? '₩' + Number(data.totalAmount).toLocaleString('ko-KR') : '금액 없음'),
+    ip: data.customerPhone || '연락처 없음',
+    location: [data.sido, data.sigungu].filter(Boolean).join(' ') || '위치 없음',
+    device: '접수자: ' + (data.authorName || '-'),
+    resolution: '메모: ' + ((data.memo || '-').slice(0, 200)),
+    windowSize: '',
+    timestamp: new Date().toLocaleString('ko-KR'),
+    to_email: recipient
+  };
+  await window.emailjs.send(serviceId, template, params);
+}
+
+// 진행 모달에 4번째 스텝 추가 (있으면)
+document.addEventListener('DOMContentLoaded', function() {
+  const prog = document.getElementById('progressModal');
+  if (prog) {
+    const steps = prog.querySelector('.space-y-3');
+    if (steps) {
+      const step4 = document.createElement('div');
+      step4.id = 'step4';
+      step4.className = 'flex items-center gap-3';
+      step4.innerHTML = '<div class="w-6 h-6 bg-neutral-200 rounded-full flex items-center justify-center text-[10px] font-black text-white">4</div><span class="text-[11px] font-bold text-neutral-400">OSKA Works 연동</span>';
+      steps.appendChild(step4);
+    }
+  }
+});
 
 // 이전 빈값 localStorage 정리 (1회성)
 try{localStorage.removeItem('oska_as_config');}catch(e){}
