@@ -2914,14 +2914,15 @@
     // - 'live' 카드: 웹폼·전화·AS·도슨트투어 등 실시간 유입 → Firestore 자동 createdAt 기준
     // - source 없는 구 데이터: createdAt과 c.date 차이가 30일 초과면 자동 'import' 취급
     function getCustomerDate(c) {
-      // createdAt 우선 — 대시보드·CRM 리스트 날짜 기준 통일 (2026-04-20)
-      // "시스템에 등록된 날짜" 기준으로 일관되게 카운트
-      if (c.createdAt?.seconds) return new Date(c.createdAt.seconds * 1000);
-      // createdAt 없는 구 데이터 fallback: date → year/month
+      // date(고객 문의 날짜) 우선 — 실제 문의일 기준 (2026-04-20 수정)
+      // 예: 4/19 문의 → 4/20 입력 시 4/19로 카운트
       if (c.date) {
         const d = new Date(c.date);
         if (!isNaN(d.getTime())) return d;
       }
+      // date 없으면 createdAt(시스템 등록 시간) fallback
+      if (c.createdAt?.seconds) return new Date(c.createdAt.seconds * 1000);
+      // 둘 다 없는 구 데이터: year/month fallback
       if (c.year && c.month) {
         const y = parseInt(c.year);
         const m = parseInt(c.month);
