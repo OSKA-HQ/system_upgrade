@@ -4146,17 +4146,19 @@
       }
       // 정렬 적용
       list.sort((a, b) => {
-        let va = a[crmSortField] || '';
-        let vb = b[crmSortField] || '';
+        let va, vb;
         if (crmSortField === 'no') {
-          va = Number(va) || 0;
-          vb = Number(vb) || 0;
+          va = Number(a.no) || 0;
+          vb = Number(b.no) || 0;
         } else if (crmSortField === 'date') {
-          va = String(va).replace(/[^0-9-]/g, '');
-          vb = String(vb).replace(/[^0-9-]/g, '');
+          // createdAt 기준 정렬 — 표시 날짜와 통일 (2026-04-20)
+          const da = getCustomerDate(a);
+          const db = getCustomerDate(b);
+          va = da ? da.getTime() : 0;
+          vb = db ? db.getTime() : 0;
         } else {
-          va = String(va).toLowerCase();
-          vb = String(vb).toLowerCase();
+          va = String(a[crmSortField] || '').toLowerCase();
+          vb = String(b[crmSortField] || '').toLowerCase();
         }
         if (va < vb) return crmSortDir === 'asc' ? -1 : 1;
         if (va > vb) return crmSortDir === 'asc' ? 1 : -1;
