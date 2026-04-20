@@ -1075,13 +1075,14 @@
                 </div>
               </button>
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <button id="${userIsDealer ? 'btnDeckBlocked' : 'btnDeck'}" class="bg-white border border-neutral-200 rounded-2xl px-8 py-7 ${userIsDealer ? 'opacity-50 grayscale' : 'hover:border-black transition-all'} flex items-center justify-between group relative text-left">
+                <button disabled class="bg-white border border-neutral-200 rounded-2xl px-8 py-7 opacity-50 grayscale cursor-not-allowed flex items-center justify-between group relative text-left">
                   <div>
-                    <div class="inline-block px-2 py-0.5 bg-neutral-100 rounded text-[8px] font-black tracking-widest uppercase mb-1 text-neutral-400">Inventory</div>
-                    <h2 class="text-xl md:text-2xl font-black tracking-tighter uppercase leading-none">Deck Management</h2>
-                    <p class="text-[10px] font-bold text-neutral-400 mt-1">${userIsDealer ? '권한 제한' : '데크 상담시트'}</p>
+                    <div class="inline-block px-2 py-0.5 bg-violet-100 rounded text-[8px] font-black tracking-widest uppercase mb-1 text-violet-400">Request</div>
+                    <h2 class="text-xl md:text-2xl font-black tracking-tighter uppercase leading-none">2D · 3D Design</h2>
+                    <p class="text-[10px] font-bold text-neutral-400 mt-1">2D 도면 · 3D 렌더링 요청</p>
+                    <p class="text-[8px] text-violet-400 font-black mt-1 uppercase tracking-widest">Coming Soon</p>
                   </div>
-                  <i data-lucide="${userIsDealer ? 'lock' : 'plus-circle'}" class="w-4 h-4 text-neutral-300 group-hover:text-black transition-all"></i>
+                  <i data-lucide="ruler" class="w-4 h-4 text-neutral-300"></i>
                 </button>
                 <button id="btnCatalog" class="bg-neutral-50 border border-neutral-100 rounded-2xl px-8 py-7 hover:bg-neutral-100 transition-all flex items-center justify-between group relative text-left">
                   <div>
